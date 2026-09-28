@@ -35,7 +35,7 @@ The production build reports a nonblocking main-bundle size warning (approximate
 Project: `Dsd`, reference `ievxqrnqeahljepcjhfp`.
 
 - Migration `20260928091330_dsd_cases.sql` applied successfully.
-- Authenticated `smile-ai` Edge Function deployed, version 4, ACTIVE, JWT verification enabled. The prompt and clinical context cover FDI 15–25. The new connection-check operation uses a fixed nonclinical prompt and image-model metadata without reading case records.
+- Authenticated `smile-ai` Edge Function deployed, version 5, ACTIVE, JWT verification enabled. The production-origin secret update retained the verified function bundle. The prompt and clinical context cover FDI 15–25. The new connection-check operation uses a fixed nonclinical prompt and image-model metadata without reading case records.
 - Function bundle SHA256: `31eea3355b2bf940608cb6c3a06dc37f43589bf943d513541bfe464090814c1f`.
 - The live public Auth settings endpoint responded 200; unauthenticated case access responded 401; unauthenticated AI responded 401; allowed localhost preflight responded 204.
 - A rollback-only database check verified owner read/insert, rejection of ownership reassignment, hidden cross-owner reads, zero cross-owner updates/deletes, rejected cross-owner inserts and rejected anonymous reads. Authenticated users have case CRUD privileges but no TRUNCATE privilege. RLS is enabled.
@@ -44,11 +44,23 @@ Project: `Dsd`, reference `ievxqrnqeahljepcjhfp`.
 
 The supplied publishable frontend key is configured in ignored `.env.local`. Private Google credentials are never included in frontend environment variables or the repository.
 
+## GitHub and hosted frontend
+
+The complete app was pushed to [shimering/dsd-app](https://github.com/shimering/dsd-app), branch `main`, source commit `33a3100354d5285b1824276e90c4a85c74801f54`. Cloudflare's native Git integration automatically built and deployed [Smile Studio](https://dsd-app.gazarxperia.workers.dev) on 28 September 2026. Build `7963c02a-56a7-4adb-8e51-1b76912beb8d` completed successfully; deployed Worker version `01cf796f-4195-41f3-b2ab-7f01e207964f`.
+
+- Cloudflare used Node 24.19.0, the configured public Supabase build variables, `npm run build:cloudflare` and `npm run deploy:cloudflare`. The build configuration guard, all 77 unit/database checks, TypeScript/Vite compilation and Wrangler static-asset deployment passed.
+- The served JavaScript bundle matched that build. The hosted root and SPA fallback returned 200; the configured frame, content-type and indexing headers were present.
+- Hosted Chromium smoke checks passed at 1440×900 and 390×844 in both themes. They covered all five workflow destinations, ten selectable teeth through FDI 25, the configured account panel, signed-out AI gating and PDF download. No page-wide horizontal overflow, failed application assets or JavaScript runtime errors were observed in these four scenarios. These checks used the illustrated demo and did not submit patient data or create a clinician account.
+- Supabase Auth's site URL is the hosted frontend. Exact allowed redirects are the hosted URL, `http://127.0.0.1:5173` and `http://localhost:5173`. The hosted account form is configured, but real signup/email delivery remains to be checked by the clinician.
+- `DSD_ALLOWED_ORIGINS` includes those three origins. The live hosted-origin AI preflight returned 204 with the exact origin; an unapproved origin returned 403 without an allow-origin header; an anonymous AI request returned 401. The existing `GEMINI_API_KEY` secret was left unchanged.
+
+Frontend pushes to `main` automatically rebuild and deploy after the build checks pass. Database migrations and Edge Function code remain separate Supabase releases. Patient media stay local to each browser origin: export a backup from localhost and import it on the hosted URL to transfer photos and masks. See [deployment setup](DEPLOYMENT.md).
+
 ## Remaining release checks
 
 The user has reported adding `GEMINI_API_KEY` to the project's Edge Function secrets. Live key acceptance and provider response verification are pending clinician sign-in and **Account and local backup → Check AI connection**. This check does not transmit patient data. Subsequent patient-specific suggestions, consultation and simulation require recorded cloud consent and clinician review. Suggestions/consultation default to `gemini-3.8-flash`; simulation uses the separately configured `gemini-3.1-flash-image`. The provider contracts are tested, but no live Gemini response has been verified. Image-model metadata access alone does not establish successful image generation. A Gemini app subscription does not itself configure an API key or quota.
 
-Configure Supabase Auth's site URL, allowed redirect URLs and email/signup settings for the actual frontend origin before onboarding clinicians. Production frontend hosting has not been deployed; the development preview is at `http://127.0.0.1:5173/`.
+Verify clinician signup, confirmation-email delivery and sign-in on the hosted URL before onboarding other clinicians. The development preview remains at `http://127.0.0.1:5173/`.
 
 Real iPad Safari, Apple Pencil and physical phone Safari/Chrome remain unverified, including real keyboard behavior, split-screen, rotation, camera capture and interrupted gestures. Automated WebKit tests are not equivalent to an iPad or iPhone. The optional Firefox runtime remains unverified because its Windows executable reports an incorrect side-by-side configuration involving `mozglue`; reinstalling the official Playwright Firefox runtime did not resolve that host issue.
 

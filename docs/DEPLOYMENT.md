@@ -8,7 +8,7 @@ Frontend URL: [Smile Studio](https://dsd-app.gazarxperia.workers.dev).
 
 ## Automatic frontend updates
 
-In Cloudflare → Workers & Pages → dsd-app → Settings → Builds, connect `shimering/dsd-app` and use:
+Cloudflare → Workers & Pages → dsd-app → Settings → Builds is connected to `shimering/dsd-app` with the following settings. The first automatic deployment of the complete app passed on 28 September 2026; verification is recorded in [RELEASE_VERIFICATION.md](RELEASE_VERIFICATION.md).
 
 | Setting | Value |
 |---|---|
@@ -27,21 +27,21 @@ Private Gemini credentials belong in Supabase Edge Function secrets. Keep `.env.
 
 ## Supabase production origin
 
-Set the dedicated project's Authentication → URL Configuration site URL to:
+The dedicated project's Authentication → URL Configuration site URL is configured as:
 
 ```text
 https://dsd-app.gazarxperia.workers.dev
 ```
 
-Allow that URL and the development origins `http://127.0.0.1:5173` and `http://localhost:5173` as sign-in redirects. New account confirmation emails should return to the app that initiated signup.
+That URL and the development origins `http://127.0.0.1:5173` and `http://localhost:5173` are allowed as exact sign-in redirects. New account confirmation emails should return to the app that initiated signup; clinician signup and email delivery still require live verification.
 
-Set `DSD_ALLOWED_ORIGINS` in Edge Function secrets to:
+`DSD_ALLOWED_ORIGINS` in Edge Function secrets is configured as:
 
 ```text
 http://localhost:5173,http://127.0.0.1:5173,https://dsd-app.gazarxperia.workers.dev
 ```
 
-`GEMINI_API_KEY` remains server-side in the same project. After deployment, verify the hosted account panel and **Check AI connection**, then test consented case-specific workflows. Cloudflare preview URLs need their own explicit origin approval before cloud AI can be used there.
+`GEMINI_API_KEY` remains server-side in the same project. The hosted account panel and origin preflight passed verification. After clinician sign-in, use **Check AI connection**, then test consented case-specific workflows. Live Gemini responses have not yet been verified. Cloudflare preview URLs need their own explicit origin approval before cloud AI can be used there.
 
 ## Local verification and backend releases
 
