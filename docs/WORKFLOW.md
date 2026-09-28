@@ -1,6 +1,6 @@
 # Smile Studio v2 review workflow
 
-Build branch: `rebuild-v2`. The existing app on `main` stays live while this editor is reviewed.
+Build branch: `rebuild-v2`. On 28 September 2026 the user authorized replacing the previous version on `main`; production targets the existing `dsd-app` worker.
 
 1. **Photos:** upload JPEG, PNG, or WebP, or capture using the device's camera picker. Add multiple views, retain the original bytes, and change rotation without resampling. Photos and generated previews remain in IndexedDB. Case records show visible local save failures.
 2. **Measure:** place free distances, polylines, angles (second point is the vertex), guide lines, or freehand annotations. Calibrate with two distinct points and a clinician-confirmed reference in the measurement plane. Uncalibrated lengths use pixels; calibrated lengths are projected millimeters. Select a point to adjust its original-photo coordinates. Cancel a gesture to discard it; undo/redo restores geometry while advancing the revision.

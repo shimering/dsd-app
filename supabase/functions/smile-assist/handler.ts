@@ -88,6 +88,7 @@ export function createHandler(env: Env, fetcher: typeof fetch = fetch) {
     const defaultAllowed = [
       'http://127.0.0.1:5174',
       'http://localhost:5174',
+      'https://dsd-app.gazarxperia.workers.dev',
       'https://dsd-app-rebuild.gazarxperia.workers.dev',
     ];
     const allowed =

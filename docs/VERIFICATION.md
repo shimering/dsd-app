@@ -1,6 +1,6 @@
 # Rebuild verification — 28 September 2026
 
-The manual preview on `rebuild-v2` implements **Photos → Measure → Lip outline → Teeth → Compare**. The live `dsd-app` has not been replaced.
+The manual rebuild implements **Photos → Measure → Lip outline → Teeth → Compare**. The initial review checks below were completed on `rebuild-v2`; the user subsequently authorized replacing the previous GitHub version.
 
 ## Checks completed
 
@@ -31,3 +31,11 @@ The tested branch is pushed to [GitHub rebuild-v2](https://github.com/shimering/
 Physical iPad Safari and Apple Pencil testing, clinician review on real photos, and authenticated end-to-end Gemini/account testing are still required. Synthetic pointer events and desktop WebKit do not establish device support. Existing Gemini server secrets are reused; their validity and model access were not tested with a patient request.
 
 Review the corrected [tooth arch](previews/tooth-review.png) and [iPad layout](previews/ipad-landscape.png), then follow [WORKFLOW.md](WORKFLOW.md). Advanced clinical features remain in the roadmap.
+
+## Promotion authorized by the user
+
+On 28 September 2026 the user requested pushing the updates to GitHub and replacing the previous version. The production configuration now targets the existing `dsd-app` worker, and both the dashboard's `npx wrangler deploy` command and `npm run deploy:cloudflare` use that target. The previous source remains recoverable in Git history and tag `legacy-before-v2-20260928` at `5b54a3ceaa14629302e48e2073a3d374c5093aef`.
+
+Supabase `smile-assist` version 2 now allows the existing production origin, with JWT verification still enabled. Its production-origin preflight passed remotely without transmitting a photo. A regression check was added: 14 unit/integration tests, edge type checks, production build, public configuration validation, and the Wrangler dry run passed. The frontend rendering is unchanged from the 32 passing browser tests above.
+
+The committed `.env.production` contains only the public Supabase URL and publishable key, allowing the Cloudflare build to retain the existing account integration without needing new dashboard variables. Server credentials and patient media remain excluded.

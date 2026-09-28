@@ -61,6 +61,23 @@ function fakeFetch(result: unknown, currentRevision = 0, consent = true) {
   }) as typeof fetch;
   return { fetcher, requests };
 }
+it('accepts the production origin without transmitting a photo during preflight', async () => {
+  const fake = fakeFetch({});
+  const result = await createHandler(
+    env,
+    fake.fetcher,
+  )(
+    new Request('https://edge.test', {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://dsd-app.gazarxperia.workers.dev' },
+    }),
+  );
+  expect(result.status).toBe(200);
+  expect(result.headers.get('Access-Control-Allow-Origin')).toBe(
+    'https://dsd-app.gazarxperia.workers.dev',
+  );
+  expect(fake.requests).toHaveLength(0);
+});
 it('blocks anonymous, unapproved origins, and unconsented photo transmission', async () => {
   const fake = fakeFetch({});
   const handler = createHandler(env, fake.fetcher);

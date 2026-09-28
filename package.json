@@ -9,7 +9,9 @@
     "test": "vitest run",
     "test:browser": "playwright test",
     "check:edge": "deno check --config supabase/functions/smile-assist/deno.local.json supabase/functions/smile-assist/index.ts",
-    "build:cloudflare": "npm test && npm run build",
+    "check:cloudflare-env": "node scripts/check-cloudflare-env.mjs",
+    "build:cloudflare": "npm run check:cloudflare-env && npm test && npm run build",
+    "deploy:cloudflare": "wrangler deploy",
     "deploy:preview": "wrangler deploy --env preview"
   },
   "dependencies": {

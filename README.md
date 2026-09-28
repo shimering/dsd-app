@@ -22,6 +22,8 @@ npm run build
 
 The Supabase migration is additive: `dsd_workspaces` and an authenticated `smile-assist` function. The existing `dsd_cases`/`smile-ai` backend and the live app remain compatible. Deploy only the new migration/function. Configure `GEMINI_API_KEY` server-side, optional `GEMINI_ASSIST_MODEL`, `GEMINI_RENDER_MODEL`, and `SMILE_ALLOWED_ORIGINS`. Public frontend keys are not Gemini credentials.
 
-Cloudflare preview deployment uses a separate `dsd-app-rebuild` worker (`npm run deploy:preview` after Wrangler sign-in). Build from `rebuild-v2`; do not merge or deploy this branch over the live `dsd-app` without review. If automated GitHub builds require a new repository access grant, use the prepared `dist` upload preview until that connection is explicitly authorized.
+Production deployment targets the existing `dsd-app` worker (`npm run deploy:cloudflare` after Wrangler sign-in). The user authorized replacing the previous version on 28 September 2026. Cloudflare previews use the separate `dsd-app-rebuild` worker (`npm run deploy:preview`). If the Git connection requires a new repository access grant, that permission must be approved separately.
+
+`.env.production` contains only the existing Supabase URL and public publishable key, so the hosted build reuses the account integration even without dashboard build variables. These values are public browser configuration; Gemini and privileged Supabase credentials remain server-side. `npm run check:cloudflare-env` validates the public configuration before deployment.
 
 Clinical reference material and prior planning are retained in [docs/reference](docs/reference). This is a visual simulation prototype; physical iPad/Pencil and authenticated provider testing remain acceptance requirements.
