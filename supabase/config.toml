@@ -1,5 +1,6 @@
-project_id = "digital-smile-design"
-
+project_id = "smile-studio-rebuild"
 [functions.smile-ai]
 verify_jwt = true
 entrypoint = "./functions/smile-ai/index.ts"
+[functions.smile-assist]
+verify_jwt = true

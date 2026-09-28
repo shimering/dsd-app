@@ -1,82 +1,27 @@
-# Smile Studio — Digital Smile Design
+# Smile Studio
 
-An English, dentist-led React workspace for upper-ten (FDI 15–25) 2D smile design. This release is a clinical evaluation prototype. The reference workflow and clinical limitations are documented in `docs/DSD_CLINICAL_RESEARCH.md`.
-
-## Run locally
+A fresh React/TypeScript smile design editor on `rebuild-v2`, built around **Photos → Measure → Lip outline → Teeth → Compare**.
 
 ```sh
 npm ci
-npm run dev -- --host 127.0.0.1
+cp .env.example .env.local
+# Set the existing Supabase URL and public publishable key.
+npm run dev
 ```
 
-Copy `.env.example` to `.env.local` and enter the DSD project's URL and **publishable** key. This workspace already has the supplied project's frontend configuration in the ignored `.env.local`. No Gemini or service-role key belongs in a `VITE_` variable.
+Preview: http://127.0.0.1:5174. Choose a photo or open **Tooth library** to review the corrected crown assets. See [docs/WORKFLOW.md](docs/WORKFLOW.md) for the guided workflow and acceptance gates.
 
-## GitHub and Cloudflare
-
-The frontend deployment targets the existing `dsd-app` Cloudflare Worker. Its native Git integration builds updates pushed to `main` in [shimering/dsd-app](https://github.com/shimering/dsd-app). Use `npm run build:cloudflare` as the build command and `npm run deploy:cloudflare` as the deploy command. The build validates public configuration, runs unit checks, and compiles the app. See [deployment configuration](docs/DEPLOYMENT.md) for the build variables, Supabase production origin and local-media transfer steps.
-
-## Workflow
-
-Capture → Assess → Design → Preview → Plan. Both themes support the full workflow at desktop, iPad landscape and phone portrait widths. System/Light/Dark and active patient preferences persist. Smaller screens use photo/tool drawers and an editing sheet with a full-screen option.
-
-- Guided original photo/video capture, optional video frame selection, capture completeness, quality review and per-photo scale/reference records.
-- Original-image geometry, alignment rotation, editable landmarks, Select/Pan, pinch zoom, magnifier, undo/redo, FDI selection, numeric editing and movement buttons. Browser zoom remains enabled.
-- Four original tooth forms, patient-specific editing and reusable presets. Calibrated image dimensions remain projected estimates, separate from measured clinical dimensions and proposed margin movements.
-- Six-site periodontal findings with unknown states, method, source, date and clinician confirmation. Facial/smile measurements have the same provenance fields.
-- Clinician-selected criteria drive conditional calculations. KTW is not attached gingiva. A clearance shortfall is not an ostectomy prescription, and proposed margin movement is not a gingivectomy quantity. No universal clinical thresholds are hard-coded.
-- Three editable AI alternatives, consultation history, separately reviewed aesthetic simulations and clinician-approved treatment drafts. Changes invalidate dependent results and clear clinical approval.
-- PNG blueprint/simulation export, treatment PDF and local backup/import. The labelled illustration is a demo; it cannot establish a scale or be sent as a patient photo.
-
-## Dedicated Supabase project
-
-Target project: `ievxqrnqeahljepcjhfp`. The database migration and authenticated `smile-ai` Edge Function are deployed to this dedicated project. Remote checks verified owner isolation, anonymous denial, allowed-origin preflight and JWT gating. No patient/test rows were retained.
-
-To configure the Gemini secret and deploy future changes using the CLI, sign into the account that owns this project:
+The manual editor passed 13 unit/integration and 32 browser checks. See [docs/VERIFICATION.md](docs/VERIFICATION.md) for the tested scope, backend deployment, screenshots, and remaining acceptance work. A hosted Cloudflare preview is pending the browser file-upload permission; the prepared public build is in `dist` and `.preview/smile-studio-preview.zip`.
 
 ```sh
-npx supabase login
-npx supabase link --project-ref ievxqrnqeahljepcjhfp
-npx supabase db push # the initial migration is already applied
-npx supabase secrets set --env-file supabase/.env.production
-npx supabase functions deploy smile-ai --project-ref ievxqrnqeahljepcjhfp
-```
-
-Copy `supabase/.env.example` to the **ignored** `supabase/.env.production`, enter the Google API key there, and set `DSD_ALLOWED_ORIGINS` to comma-separated app origins without trailing slashes. Use only origins controlled by your practice. Keep this file outside backups. Configure Supabase Auth's site URL and allowed redirects for your app. Confirm email/signup settings before creating clinician accounts.
-
-The migration creates `dsd_cases`, explicitly grants authenticated access and enforces owner-based RLS for SELECT/INSERT/UPDATE/DELETE. The JSON body holds structured cases, measurement provenance, revisions, presets, consent, consultation and output metadata; originals and generated bytes are excluded. Concurrent saves use a previous-timestamp check, retaining the local copy on conflict. There are no Storage buckets.
-
-`smile-ai` verifies the session, reads the case through RLS, checks ownership, current revision/media and consent, runs the same deterministic clinical calculations as the browser, validates provider output and returns provenance. Gemini credentials stay server-side. Quota/configuration/provider failures produce actionable messages; no substitute or older-model fallback is used.
-
-After adding `GEMINI_API_KEY` in Supabase's Edge Function secrets, sign in through **Account and local backup** and select **Check AI connection**. This authenticated check sends one fixed, nonclinical text prompt and separately checks image-model metadata. It does not send patient photos or clinical findings. Text readiness requires a real usable provider response; image availability does not verify image generation. Configuration, model-access and quota failures are shown separately.
-
-Text defaults to **`gemini-3.8-flash`** and requires a configured Gemini 3.5+ text model. Image generation separately defaults to **`gemini-3.1-flash-image`**. The Gemini app subscription does not configure API quota or credentials: check the Google API project's access and billing. See [Google's text model documentation](https://ai.google.dev/gemini-api/docs/generate-content/latest-model) and [image API documentation](https://ai.google.dev/gemini-api/docs/generate-content/image-generation).
-
-Simulation inputs and the design blueprint share a padded, supported frame. The app rejects incompatible output framing, removes the known padding and replaces only pixel centres inside the clinician-reviewed elliptical mask. Original decoded pixels outside the mask remain identical. Review actual tooth/face registration and clinical limitations before aesthetic acceptance. Simulation images cannot establish measurements or guarantee outcomes.
-
-## Local media and recovery
-
-IndexedDB holds originals, extracted video frames, reviewed masks, generated composites and a local structured copy scoped to the signed-in owner. localStorage holds small preferences and the Supabase session. Original pixels are re-encoded without EXIF for a consented AI request; the selected photo and clinical context are transmitted to Google even though there is no cloud media storage.
-
-Backups are limited to 150MB per file to bound browser import memory. Use **Export this patient** to make separate backups for a larger workspace.
-
-Signing in on another browser/device restores structured data but displays missing-media states. Restore a practice-controlled backup on that device. Imports create new case identifiers, revoke cloud consent and clear clinical approval. Legacy prototype records are migrated with unconfirmed findings, unknown CEJ sign/reference and uncalibrated photos. Clearing browser data can remove local media; export a backup first.
-
-Existing six-tooth cases upgrade to FDI 15–25 when loaded. The upgrade creates extended design revisions, preserves existing tooth geometry, photos and calibration, and adds blank premolar findings. Previous AI results and clinical approval require fresh review. The added tooth positions and forms are editable starting points, not detected anatomy or clinical measurements.
-
-## Verification
-
-```sh
-npm run build
 npm test
-npm run check:edge
-npx playwright install chromium firefox webkit
 npm run test:browser
-# Optional Firefox runtime check:
-npm run test:browser:firefox
+npm run check:edge
+npm run build
 ```
 
-Unit checks exercise coordinate transforms, conditional clinical calculations, consent/revision gates, authenticated provider contracts and the actual SQL migration in a local Postgres runtime. Browser checks cover both themes at 320×568, 390×844, 430×932, 1024×768, 1180×820, 1366×1024, 1280×800, 1440×900 and 1920×1080. Provider contracts use explicit test mocks; successful mocks do not establish live Gemini integration.
+The Supabase migration is additive: `dsd_workspaces` and an authenticated `smile-assist` function. The existing `dsd_cases`/`smile-ai` backend and the live app remain compatible. Deploy only the new migration/function. Configure `GEMINI_API_KEY` server-side, optional `GEMINI_ASSIST_MODEL`, `GEMINI_RENDER_MODEL`, and `SMILE_ALLOWED_ORIGINS`. Public frontend keys are not Gemini credentials.
 
-Chromium and WebKit verification passed. The optional Firefox executable could not launch on this Windows host because of an incorrect side-by-side runtime configuration; Firefox remains unverified.
+Cloudflare preview deployment uses a separate `dsd-app-rebuild` worker (`npm run deploy:preview` after Wrangler sign-in). Build from `rebuild-v2`; do not merge or deploy this branch over the live `dsd-app` without review. If automated GitHub builds require a new repository access grant, use the prepared `dist` upload preview until that connection is explicitly authorized.
 
-The user has reported adding the server-side Gemini key. Live provider verification is pending clinician sign-in and the authenticated connection check. Real iPad Safari/Pencil and phone Safari/Chrome verification, live patient-specific AI workflows, and periodontal/restorative expert review remain separate release checks. `docs/RELEASE_VERIFICATION.md` records completed checks and these limits.
+Clinical reference material and prior planning are retained in [docs/reference](docs/reference). This is a visual simulation prototype; physical iPad/Pencil and authenticated provider testing remain acceptance requirements.
