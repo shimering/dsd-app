@@ -26,6 +26,8 @@ The local preview runs at http://127.0.0.1:5174/. The production build is in `di
 
 Cloudflare publishing remains pending. Automatic approval review rejected a new Cloudflare/GitHub connection because it could grant repository access. Static upload through the already authenticated Cloudflare session was then blocked by the Edge extension's file-access permission. No new worker was deployed and no live settings were changed. An upload of `dist` to a separate `dsd-app-rebuild` worker, or an explicitly approved Git build connection, is required for a hosted review URL.
 
+The tested branch is pushed to [GitHub rebuild-v2](https://github.com/shimering/dsd-app/tree/rebuild-v2). The GitHub connector denied draft PR creation with an integration-permission error; automatic approval review then rejected a browser fallback as an alternate route around that access-control failure. No pull request was created. Using the signed-in browser session to create a draft PR requires specific user approval.
+
 Physical iPad Safari and Apple Pencil testing, clinician review on real photos, and authenticated end-to-end Gemini/account testing are still required. Synthetic pointer events and desktop WebKit do not establish device support. Existing Gemini server secrets are reused; their validity and model access were not tested with a patient request.
 
 Review the corrected [tooth arch](previews/tooth-review.png) and [iPad layout](previews/ipad-landscape.png), then follow [WORKFLOW.md](WORKFLOW.md). Advanced clinical features remain in the roadmap.
