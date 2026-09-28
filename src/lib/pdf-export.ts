@@ -1,158 +1,170 @@
-import jsPDF from 'jspdf';
-import { Case, ClinicalEvaluationResult } from '../types';
-
+import jsPDF from "jspdf";
+import { Case, ClinicalEvaluationResult, FDI_VISIBLE_UPPER } from "../types";
+import { activeRevision } from "./case-model";
 export function exportTreatmentPlanPdf(
-  activeCase: Case,
+  c: Case,
   evaluations: Record<number, ClinicalEvaluationResult>,
-  simulationImageBase64?: string
 ) {
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'mm',
-    format: 'a4'
-  });
-
-  const pageWidth = doc.internal.pageSize.getWidth();
+  const doc = new jsPDF(),
+    margin = 16,
+    width = 178;
   let y = 20;
-
-  // Header Bar
-  doc.setFillColor(11, 15, 25); // Dark clinical
-  doc.rect(0, 0, pageWidth, 28, 'F');
-
-  doc.setTextColor(6, 182, 212); // Cyan
-  doc.setFontSize(16);
-  doc.setFont('helvetica', 'bold');
-  doc.text('DIGITAL SMILE DESIGN — TREATMENT PLAN REPORT', 14, 12);
-
-  doc.setTextColor(248, 250, 252);
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`Patient ID: ${activeCase.patientIdentifier}  |  Date: ${new Date().toLocaleDateString()}  |  Status: ${activeCase.status.toUpperCase()}`, 14, 20);
-
-  y = 36;
-
-  // Section 1: Clinical Goals & Design Summary
-  doc.setTextColor(17, 24, 39);
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text('1. Aesthetic Goals & Tooth Blueprint', 14, y);
-  y += 6;
-
-  const activeRev = activeCase.revisions.find(r => r.id === activeCase.activeRevisionId) || activeCase.revisions[0];
-  const centralTooth = activeRev?.teeth[11];
-  const formName = (centralTooth?.form || 'Rounded').toUpperCase();
-  const shade = centralTooth?.shade || 'A1';
-  const isCalibrated = activeCase.photos.smile?.calibration?.isCalibrated || false;
-
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`• Selected Tooth Form: ${formName}  |  Target Shade: ${shade}`, 16, y);
-  y += 5;
-  doc.text(`• Calibration Status: ${isCalibrated ? `Calibrated (${activeCase.photos.smile?.calibration?.pixelsPerMm?.toFixed(1)} px/mm)` : 'Proportional (% only - uncalibrated)'}`, 16, y);
-  y += 8;
-
-  // Section 2: Per-Tooth FDI Measurement & Periodontal Table
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text('2. Visible Maxillary Arch (FDI 13–23) Periodontal & Margin Analysis', 14, y);
-  y += 6;
-
-  // Table Header
-  doc.setFillColor(241, 245, 249);
-  doc.rect(14, y, pageWidth - 28, 7, 'F');
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text('Tooth', 16, y + 5);
-  doc.text('Form', 30, y + 5);
-  doc.text('&Delta;GM (Gingival)', 48, y + 5);
-  doc.text('&Delta;Inc (Extension)', 75, y + 5);
-  doc.text('Bone Clearance', 105, y + 5);
-  doc.text('KTW Remaining', 135, y + 5);
-  doc.text('EFP Candidate Status', 165, y + 5);
-  y += 9;
-
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(15, 23, 42);
-
-  const teethList = [13, 12, 11, 21, 22, 23];
-  for (const fdi of teethList) {
-    const t = activeRev?.teeth[fdi];
-    const m = activeCase.measurements[fdi];
-    const ev = evaluations[fdi];
-
-    const deltaGm = t?.gingivalShiftMm ? `+${t.gingivalShiftMm.toFixed(1)} mm` : '0.0 mm';
-    const deltaInc = t?.incisalExtensionMm ? `+${t.incisalExtensionMm.toFixed(1)} mm` : '0.0 mm';
-    const bone = ev?.remainingBoneClearanceMm !== undefined ? `${ev.remainingBoneClearanceMm.toFixed(1)} mm` : '—';
-    const ktw = ev?.remainingKtwMm !== undefined ? `${ev.remainingKtwMm.toFixed(1)} mm` : '—';
-    
-    let statusLabel = 'Assessment Needed';
-    if (ev?.outcome === 'candidate_gingivectomy') statusLabel = 'Gingivectomy';
-    if (ev?.outcome === 'candidate_crown_lengthening') statusLabel = 'Crown Lengthening';
-    if (ev?.outcome === 'restorative_only') statusLabel = 'Restorative Only';
-    if (ev?.outcome === 'referral_periodontist') statusLabel = 'Perio Referral';
-
-    doc.text(`FDI ${fdi}`, 16, y);
-    doc.text(t?.form || '—', 30, y);
-    doc.text(deltaGm, 48, y);
-    doc.text(deltaInc, 75, y);
-    doc.text(bone, 105, y);
-    doc.text(ktw, 135, y);
-    doc.text(statusLabel, 165, y);
-
-    y += 6;
+  function reserve(mm: number) {
+    if (y + mm > 276) {
+      doc.addPage();
+      y = 20;
+    }
   }
-
-  y += 6;
-
-  // Section 3: Recommended Clinical Treatment Sequence
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text('3. Proposed Clinical Execution Sequence', 14, y);
-  y += 6;
-
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  const sequenceSteps = activeCase.treatmentPlan?.proposedSequence || [
-    '1. Diagnostic review and patient consent verification.',
-    '2. Calibrated digital smile design alignment with facial midline and lower lip curve.',
-    '3. Hard & soft tissue periodontal intervention as validated by bone sounding.',
-    '4. Periodontal tissue healing period (minimum 8–12 weeks prior to final prep).',
-    '5. Conservative minimally invasive tooth preparation and definitive restorations.'
-  ];
-
-  for (const step of sequenceSteps) {
-    doc.text(step, 16, y);
-    y += 5;
+  function line(text: string, size = 10, bold = false) {
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    doc.setFontSize(size);
+    const lines = doc.splitTextToSize(
+      text.replace(/[^\x20-\x7E\n]/g, "-"),
+      width,
+    );
+    for (const l of lines) {
+      if (y > 276) {
+        doc.addPage();
+        y = 20;
+      }
+      doc.text(l, margin, y);
+      y += size * 0.48;
+    }
+    y += 3;
   }
-
-  y += 6;
-
-  // Regulatory Disclaimer & Dentist Signature Box
-  doc.setDrawColor(203, 213, 225);
-  doc.rect(14, y, pageWidth - 28, 24);
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(220, 38, 38);
-  doc.text('MANDATORY CLINICAL NOTICE:', 16, y + 5);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(100, 116, 139);
-  doc.text('Simulated treatment outcomes and digital overlays are diagnostic visual blueprints for patient communication.', 16, y + 10);
-  doc.text('They do not constitute automated surgical or prosthetic prescriptions. The licensed clinician remains strictly', 16, y + 14);
-  doc.text('responsible for independent intraoral validation of biological width, bone architecture, and occlusal dynamics.', 16, y + 18);
-
-  y += 32;
-
-  // Signature lines
-  doc.setTextColor(30, 41, 59);
-  doc.setFontSize(9);
-  doc.line(16, y + 10, 80, y + 10);
-  doc.text('Treating Clinician Signature', 16, y + 15);
-
-  doc.line(120, y + 10, 184, y + 10);
-  doc.text('Patient Confirmation & Date', 120, y + 15);
-
-  // Save / Download PDF
-  doc.save(`DSD_Treatment_Plan_${activeCase.patientIdentifier}_${new Date().toISOString().slice(0, 10)}.pdf`);
+  line("SMILE STUDIO | DIGITAL SMILE DESIGN", 17, true);
+  line(`Patient: ${c.patientIdentifier} | ${new Date().toLocaleDateString()}`);
+  const p = c.treatmentPlan,
+    stale =
+      p &&
+      (p.sourceVersion !== c.contextVersion ||
+        p.revisionId !== c.activeRevisionId),
+    approved =
+      p?.approval && p.approval.contextVersion === c.contextVersion && !stale;
+  line(
+    `Status: ${approved ? "Clinician approved" : stale ? "Earlier revision - review required" : "Clinical draft"} | Revision ${activeRevision(c).revisionNumber}`,
+    10,
+    true,
+  );
+  line(
+    "Evaluation prototype. Aesthetic simulation is not a guaranteed postoperative outcome. Proposed margin movements are not surgical removal prescriptions. Clinical approval is separate from aesthetic acceptance.",
+  );
+  line(
+    `Case ${c.id} | Clinical context ${c.contextVersion} | Design ${c.activeRevisionId}`,
+    8,
+  );
+  if (p)
+    line(
+      `Draft source: context ${p.sourceVersion}, design ${p.revisionId}.`,
+      8,
+    );
+  for (const fdi of FDI_VISIBLE_UPPER) {
+    const t = activeRevision(c).teeth[fdi],
+      ev = evaluations[fdi];
+    const m = c.measurements[fdi],
+      site = m.sites[m.evaluationSite];
+    const inputs = [
+      ["Probing depth", site.probingDepth],
+      ["Margin to bone crest", site.boneSounding],
+      ["KTW", site.ktw],
+      ["Signed margin to CEJ", site.marginToCej],
+      ["Planned finish-line depth", site.finishLineDepth],
+      ["Clinical crown width", m.currentWidth],
+      ["Clinical crown height", m.currentHeight],
+    ] as const;
+    const inputSummary = inputs
+      .map(
+        ([label, value]) =>
+          `${label}: ${value.state === "known" && value.value !== null ? `${value.value.toFixed(1)} mm (${value.source}, ${value.confirmed ? "confirmed" : "unconfirmed"})` : value.state.replaceAll("_", " ")}`,
+      )
+      .join("; ");
+    const rows = [
+      [`FDI ${fdi} | ${t.form} | Shade preference ${t.shade}`, 12, true],
+      [
+        `Proposed margin movement: ${t.gingivalShiftMm.toFixed(1)} mm (+ apical / - coronal). Incisal change: ${t.incisalExtensionMm.toFixed(1)} mm (+ lengthen / - shorten).`,
+        10,
+        false,
+      ],
+      [ev.headline, 10, true],
+      [
+        `Evaluation site ${m.evaluationSite} | Phenotype ${m.phenotype.replaceAll("_", " ")} | Current restoration ${m.restorativeStatus.replaceAll("_", " ")}`,
+        9,
+        false,
+      ],
+      [inputSummary, 9, false],
+      ...inputs
+        .filter(([, value]) => value.state === "known" && value.value !== null)
+        .map(([label, value]) => [
+          `${label}: method ${value.method || "not recorded"}; recorded ${value.recordedAt}.`,
+          8,
+          false,
+        ]),
+      ...(m.criteria.confirmed
+        ? [
+            [
+              `Criteria: site ${m.criteria.site ?? "unknown"}; minimum finish-line-to-crest ${m.criteria.minimumClearanceMm ?? "unknown"} mm; minimum remaining KTW ${m.criteria.minimumKtwMm ?? "unknown"} mm. Reference: ${m.criteria.reference || "not recorded"}. Confirmed by ${m.criteria.confirmedBy ?? "unknown"} at ${m.criteria.confirmedAt ?? "unknown"}.`,
+              8,
+              false,
+            ],
+          ]
+        : []),
+      ...[...ev.supportingFindings, ...ev.unresolved].map((s) => [
+        `- ${s}`,
+        9,
+        false,
+      ]),
+    ] as [string, number, boolean][];
+    const blockHeight = rows.reduce((total, [text, size, bold]) => {
+      doc.setFont("helvetica", bold ? "bold" : "normal");
+      doc.setFontSize(size);
+      return (
+        total +
+        doc.splitTextToSize(text.replace(/[^\x20-\x7E\n]/g, "-"), width)
+          .length *
+          size *
+          0.48 +
+        3
+      );
+    }, 0);
+    reserve(Math.min(blockHeight, 256));
+    for (const [text, size, bold] of rows) line(text, size, bold);
+  }
+  if (p)
+    for (const [key, label] of [
+      ["goals", "Patient goals"],
+      ["periodontalSummary", "Periodontal options and clinician quantities"],
+      ["restorativeAlternatives", "Restorative alternatives"],
+      ["proposedSequence", "Treatment sequence"],
+      ["referralNeeds", "Referrals and milestones"],
+      ["unresolvedFindings", "Unresolved findings"],
+    ] as const) {
+      reserve(22);
+      line(label, 12, true);
+      line(p[key] || "Not recorded.");
+    }
+  if (approved)
+    line(
+      `Approved by ${p!.approval!.clinician} at ${p!.approval!.approvedAt}`,
+      10,
+      true,
+    );
+  for (const sim of c.simulations)
+    line(
+      `Simulation: ${sim.provenance.model} | ${sim.reviewStatus} | Source revision ${sim.provenance.revisionId}`,
+      9,
+    );
+  const count = doc.getNumberOfPages();
+  for (let i = 1; i <= count; i++) {
+    doc.setPage(i);
+    doc.setTextColor(100);
+    doc.setFontSize(8);
+    doc.text(
+      `Clinician-reviewed evaluation prototype | ${i} / ${count}`,
+      16,
+      289,
+    );
+  }
+  doc.save(
+    `smile-plan-${c.patientIdentifier.replace(/[^a-z0-9-]/gi, "_")}.pdf`,
+  );
 }

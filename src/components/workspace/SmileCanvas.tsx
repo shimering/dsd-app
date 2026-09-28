@@ -1,445 +1,615 @@
-import React, { useRef, useState, useEffect } from 'react';
-import { 
-  Case, 
-  ToothTransform, 
-  Point2D, 
-  CalibrationData 
-} from '../../types';
-import { TOOTH_TEMPLATES, getToothTypeFromFdi, isRightQuadrant } from '../../lib/tooth-templates';
-import { 
-  Eye, 
-  EyeOff, 
-  Maximize2, 
-  Minimize2, 
-  RotateCw, 
-  Move, 
-  Ruler, 
-  Check, 
-  Sparkles,
-  HelpCircle
-} from 'lucide-react';
-
-interface SmileCanvasProps {
-  currentCase: Case;
-  selectedFdi: number;
-  onSelectTooth: (fdi: number) => void;
-  onUpdateToothTransform: (fdi: number, updates: Partial<ToothTransform>) => void;
-  onUpdateCalibration: (calibration: CalibrationData) => void;
-  onUpdateGuides: (guides: any) => void;
-  showMidline: boolean;
-  showSmileArc: boolean;
-  showTeethOverlay: boolean;
-  overlayOpacity: number;
-}
-
-export const SmileCanvas: React.FC<SmileCanvasProps> = ({
+import React, { useEffect, useRef, useState } from "react";
+import {
+  Hand,
+  MousePointer2,
+  ZoomIn,
+  ZoomOut,
+  Maximize,
+  Undo2,
+  Redo2,
+  Ruler,
+  ImagePlus,
+} from "lucide-react";
+import {
+  Case,
+  GuideKey,
+  PhotoAsset,
+  Point2D,
+  ToothTransform,
+} from "../../types";
+import { activePhoto, activeRevision } from "../../lib/case-model";
+import {
+  clamp,
+  fitScale,
+  imageToScreen,
+  screenToImage,
+} from "../../lib/geometry";
+import {
+  TOOTH_TEMPLATES,
+  POPULAR_DENTAL_SHADES,
+  getToothTypeFromFdi,
+  isRightQuadrant,
+} from "../../lib/tooth-templates";
+export type SelectedGuide = GuideKey | "calibration" | "none";
+const colors: Record<GuideKey, string> = {
+  facialMidline: "#59e1d3",
+  dentalMidline: "#94c6ff",
+  bipupillary: "#a0c4dc",
+  incisalPlane: "#fcb975",
+  smileArc: "#f5c65c",
+  gingivalCurve: "#b9caff",
+  papillae: "#ffb9ce",
+  canineLines: "#a5dfb6",
+};
+type Drag = {
+  kind: "tooth" | "guide" | "pan" | "pinch";
+  start: Point2D;
+  pan: Point2D;
+  tooth?: ToothTransform;
+  index?: number;
+  guide?: SelectedGuide;
+  distance?: number;
+  zoom?: number;
+  anchor?: Point2D;
+};
+export function SmileCanvas({
   currentCase,
   selectedFdi,
   onSelectTooth,
-  onUpdateToothTransform,
-  onUpdateCalibration,
-  onUpdateGuides,
-  showMidline,
-  showSmileArc,
-  showTeethOverlay,
-  overlayOpacity
-}) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [zoom, setZoom] = useState<number>(1);
-  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-  const [isPanning, setIsPanning] = useState(false);
-  const [panStart, setPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
-
-  // Calibration tool state
-  const [isCalibrating, setIsCalibrating] = useState(false);
-  const [calibPointA, setCalibPointA] = useState<Point2D>({ x: 420, y: 325 });
-  const [calibPointB, setCalibPointB] = useState<Point2D>({ x: 495, y: 325 });
-  const [knownDistanceMm, setKnownDistanceMm] = useState<number>(8.5);
-
-  const activePhoto = currentCase.photos[currentCase.activePhotoType];
-  const calibration = activePhoto?.calibration || { isCalibrated: false };
-  const isCalibrated = calibration.isCalibrated;
-  const pixelsPerMm = calibration.pixelsPerMm || 1;
-
-  const activeRevision = currentCase.revisions.find(r => r.id === currentCase.activeRevisionId) || currentCase.revisions[0];
-  const teeth = activeRevision?.teeth || {};
-
-  // Handle Dragging a tooth
-  const [draggingFdi, setDraggingFdi] = useState<number | null>(null);
-  const [dragStart, setDragStart] = useState<Point2D>({ x: 0, y: 0 });
-
-  const handleToothMouseDown = (fdi: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    onSelectTooth(fdi);
-    setDraggingFdi(fdi);
-    setDragStart({ x: e.clientX, y: e.clientY });
+  onUpdateTooth,
+  onUpdatePhoto,
+  guide,
+  onGuide,
+  visibleGuides,
+  showTeeth,
+  opacity,
+  onCapture,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo,
+}: {
+  currentCase: Case;
+  selectedFdi: number;
+  onSelectTooth: (fdi: number) => void;
+  onUpdateTooth: (fdi: number, patch: Partial<ToothTransform>) => void;
+  onUpdatePhoto: (patch: Partial<PhotoAsset>) => void;
+  guide: SelectedGuide;
+  onGuide: (g: SelectedGuide) => void;
+  visibleGuides: GuideKey[];
+  showTeeth: boolean;
+  opacity: number;
+  onCapture: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+}) {
+  const photo = activePhoto(currentCase),
+    teeth = activeRevision(currentCase).teeth,
+    ref = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState({ width: 800, height: 500 }),
+    [zoom, setZoom] = useState(1),
+    [pan, setPan] = useState<Point2D>({ x: 0, y: 0 }),
+    [mode, setMode] = useState<"select" | "pan">("select");
+  const [draftTooth, setDraftTooth] = useState<ToothTransform | null>(null),
+    [draftPoints, setDraftPoints] = useState<Point2D[] | null>(null),
+    [cursor, setCursor] = useState<Point2D | null>(null);
+  const pointers = useRef(new Map<number, Point2D>()),
+    penPointer = useRef<number | null>(null),
+    drag = useRef<Drag | null>(null),
+    draftRef = useRef<{ tooth?: ToothTransform; points?: Point2D[] }>({});
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const observer = new ResizeObserver(([entry]) =>
+      setSize({
+        width: entry.contentRect.width,
+        height: entry.contentRect.height,
+      }),
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    setPan({ x: 0, y: 0 });
+    setZoom(1);
+    setDraftTooth(null);
+    setDraftPoints(null);
+    pointers.current.clear();
+    drag.current = null;
+  }, [photo?.id]);
+  const width = photo?.width ?? 1000,
+    height = photo?.height ?? 650,
+    rotation = photo?.orientationDeg ?? 0;
+  const base = fitScale(size.width, size.height, width, height, rotation),
+    scale = base * zoom,
+    center = { x: size.width / 2 + pan.x, y: size.height / 2 + pan.y };
+  const toImage = (p: Point2D) =>
+    screenToImage(p, center, width, height, scale, rotation);
+  const screenPoint = (e: React.PointerEvent) => {
+    const b = ref.current!.getBoundingClientRect();
+    return { x: e.clientX - b.left, y: e.clientY - b.top };
   };
-
-  const handleCanvasMouseMove = (e: React.MouseEvent) => {
-    if (draggingFdi && teeth[draggingFdi]) {
-      const dx = (e.clientX - dragStart.x) / (zoom * 10);
-      const dy = (e.clientY - dragStart.y) / (zoom * 10);
-
-      const tooth = teeth[draggingFdi];
-      onUpdateToothTransform(draggingFdi, {
-        x: Math.min(90, Math.max(10, tooth.x + dx)),
-        y: Math.min(90, Math.max(10, tooth.y + dy))
-      });
-      setDragStart({ x: e.clientX, y: e.clientY });
-    } else if (isPanning) {
+  const calibrated = !!photo?.calibration.isCalibrated,
+    ppm = photo?.calibration.pixelsPerMm ?? 1;
+  const guidePoints =
+    guide === "calibration"
+      ? [
+          photo?.calibration.p1 ?? { x: width * 0.43, y: height * 0.52 },
+          photo?.calibration.p2 ?? { x: width * 0.5, y: height * 0.52 },
+        ]
+      : guide !== "none"
+        ? photo?.guides[guide]
+        : [];
+  const cancel = () => {
+    drag.current = null;
+    pointers.current.clear();
+    penPointer.current = null;
+    draftRef.current = {};
+    setDraftTooth(null);
+    setDraftPoints(null);
+    setCursor(null);
+  };
+  function down(e: React.PointerEvent<SVGSVGElement>) {
+    if (
+      !photo?.url ||
+      (e.pointerType === "touch" && penPointer.current !== null)
+    )
+      return;
+    if (e.pointerType === "pen") {
+      cancel();
+      penPointer.current = e.pointerId;
+    }
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const screen = screenPoint(e);
+    pointers.current.set(e.pointerId, screen);
+    if (pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()],
+        mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      drag.current = {
+        kind: "pinch",
+        start: mid,
+        pan,
+        distance: Math.hypot(b.x - a.x, b.y - a.y),
+        zoom,
+        anchor: toImage(mid),
+      };
+      draftRef.current = {};
+      setDraftTooth(null);
+      setDraftPoints(null);
+      return;
+    }
+    const target = (e.target as Element).closest("[data-fdi],[data-point]"),
+      point = target?.getAttribute("data-point"),
+      fdi = target?.getAttribute("data-fdi");
+    draftRef.current = {};
+    if (
+      mode === "select" &&
+      point !== null &&
+      point !== undefined &&
+      guide !== "none"
+    ) {
+      drag.current = {
+        kind: "guide",
+        start: toImage(screen),
+        pan,
+        index: Number(point),
+        guide,
+      };
+      setCursor(toImage(screen));
+    } else if (mode === "select" && fdi) {
+      const tooth = teeth[Number(fdi)];
+      onSelectTooth(Number(fdi));
+      drag.current = { kind: "tooth", start: toImage(screen), pan, tooth };
+    } else drag.current = { kind: "pan", start: screen, pan };
+  }
+  function move(e: React.PointerEvent<SVGSVGElement>) {
+    if (!pointers.current.has(e.pointerId) || !drag.current) return;
+    const screen = screenPoint(e);
+    pointers.current.set(e.pointerId, screen);
+    const d = drag.current;
+    if (d.kind === "pinch" && pointers.current.size === 2) {
+      const [a, b] = [...pointers.current.values()],
+        mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+        next = clamp(
+          (d.zoom! * Math.hypot(b.x - a.x, b.y - a.y)) /
+            Math.max(1, d.distance!),
+          0.5,
+          12,
+        ),
+        v = imageToScreen(
+          d.anchor!,
+          { x: 0, y: 0 },
+          width,
+          height,
+          base * next,
+          rotation,
+        );
+      setZoom(next);
       setPan({
-        x: pan.x + (e.clientX - panStart.x),
-        y: pan.y + (e.clientY - panStart.y)
+        x: mid.x - size.width / 2 - v.x,
+        y: mid.y - size.height / 2 - v.y,
       });
-      setPanStart({ x: e.clientX, y: e.clientY });
+      return;
     }
-  };
-
-  const handleCanvasMouseUp = () => {
-    setDraggingFdi(null);
-    setIsPanning(false);
-  };
-
-  // Calibration Confirm
-  const applyCalibration = () => {
-    const dx = calibPointB.x - calibPointA.x;
-    const dy = calibPointB.y - calibPointA.y;
-    const pixelDistance = Math.sqrt(dx * dx + dy * dy);
-
-    if (pixelDistance > 10 && knownDistanceMm > 0) {
-      const calculatedPxPerMm = pixelDistance / knownDistanceMm;
-      onUpdateCalibration({
-        isCalibrated: true,
-        p1: calibPointA,
-        p2: calibPointB,
-        realDistanceMm: knownDistanceMm,
-        pixelsPerMm: calculatedPxPerMm
+    if (d.kind === "pan") {
+      setPan({
+        x: d.pan.x + screen.x - d.start.x,
+        y: d.pan.y + screen.y - d.start.y,
       });
-      setIsCalibrating(false);
+      return;
     }
-  };
-
+    const p = toImage(screen);
+    if (d.kind === "tooth" && d.tooth) {
+      const next = {
+        ...d.tooth,
+        x: clamp(d.tooth.x + p.x - d.start.x, 0, width),
+        y: clamp(d.tooth.y + p.y - d.start.y, 0, height),
+      };
+      draftRef.current = { tooth: next };
+      setDraftTooth(next);
+    }
+    if (d.kind === "guide") {
+      const points = [...(guidePoints ?? [])];
+      points[d.index!] = { x: clamp(p.x, 0, width), y: clamp(p.y, 0, height) };
+      draftRef.current = { points };
+      setDraftPoints(points);
+      setCursor(points[d.index!]);
+    }
+  }
+  function up(e: React.PointerEvent<SVGSVGElement>) {
+    if (!pointers.current.has(e.pointerId)) return;
+    pointers.current.delete(e.pointerId);
+    const d = drag.current;
+    if (d?.kind === "tooth" && draftRef.current.tooth) {
+      const t = draftRef.current.tooth;
+      onUpdateTooth(t.fdi, { x: t.x, y: t.y });
+    }
+    if (d?.kind === "guide" && draftRef.current.points && photo) {
+      if (d.guide === "calibration")
+        onUpdatePhoto({
+          calibration: {
+            isCalibrated: false,
+            p1: draftRef.current.points[0],
+            p2: draftRef.current.points[1],
+          },
+        });
+      else if (d.guide && d.guide !== "none")
+        onUpdatePhoto({
+          guides: { ...photo.guides, [d.guide]: draftRef.current.points },
+        });
+    }
+    if (e.currentTarget.hasPointerCapture(e.pointerId))
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    cancel();
+  }
+  const transform = `translate(${center.x} ${center.y}) rotate(${rotation}) scale(${scale}) translate(${-width / 2} ${-height / 2})`;
+  function imageLayers(interactive = true) {
+    return (
+      <>
+        <image
+          href={photo?.url}
+          width={width}
+          height={height}
+          preserveAspectRatio="none"
+        />
+        {visibleGuides.map((key) => {
+          const points =
+            guide === key && draftPoints ? draftPoints : photo?.guides[key];
+          if (!points) return null;
+          const curve = key === "smileArc" || key === "gingivalCurve";
+          return (
+            <g
+              key={key}
+              fill="none"
+              stroke={colors[key]}
+              strokeWidth={1.5 / scale}
+              strokeDasharray={`${5 / scale} ${4 / scale}`}
+              pointerEvents="none"
+            >
+              {curve ? (
+                <path
+                  d={`M ${points[0].x} ${points[0].y} Q ${points[1].x} ${points[1].y} ${points[2].x} ${points[2].y}`}
+                />
+              ) : key === "papillae" ? (
+                points.map((p, i) => (
+                  <circle
+                    key={i}
+                    cx={p.x}
+                    cy={p.y}
+                    r={3 / scale}
+                    fill={colors[key]}
+                  />
+                ))
+              ) : key === "canineLines" ? (
+                <>
+                  <line
+                    x1={points[0].x}
+                    y1={points[0].y}
+                    x2={points[1].x}
+                    y2={points[1].y}
+                  />
+                  <line
+                    x1={points[2].x}
+                    y1={points[2].y}
+                    x2={points[3].x}
+                    y2={points[3].y}
+                  />
+                </>
+              ) : (
+                <line
+                  x1={points[0].x}
+                  y1={points[0].y}
+                  x2={points[1].x}
+                  y2={points[1].y}
+                />
+              )}
+            </g>
+          );
+        })}
+        {showTeeth &&
+          Object.values(teeth).map((original) => {
+            const t = draftTooth?.fdi === original.fdi ? draftTooth : original,
+              path =
+                t.customPath ??
+                (
+                  TOOTH_TEMPLATES[t.form] ?? TOOTH_TEMPLATES.rounded
+                ).outlinePath(
+                  getToothTypeFromFdi(t.fdi),
+                  isRightQuadrant(t.fdi),
+                ),
+              selected = t.fdi === selectedFdi;
+            return (
+              <g
+                key={t.fdi}
+                data-fdi={interactive ? t.fdi : undefined}
+                transform={`translate(${t.x} ${t.y}) rotate(${t.rotation})`}
+                opacity={opacity}
+                style={{ cursor: "move" }}
+              >
+                <svg
+                  x={-t.widthPx / 2}
+                  y={-t.heightPx / 2}
+                  width={t.widthPx}
+                  height={t.heightPx}
+                  viewBox="0 0 100 100"
+                  overflow="visible"
+                >
+                  <path
+                    d={path}
+                    fill={
+                      (POPULAR_DENTAL_SHADES.find((s) => s.code === t.shade)
+                        ?.hex ?? "#F3EFE3") + (selected ? "66" : "44")
+                    }
+                    stroke={selected ? "#a3ffea" : "#66ccbe"}
+                    strokeWidth={selected ? 2 : 1.3}
+                  />
+                  {calibrated && t.gingivalShiftMm !== 0 && (
+                    <path
+                      d={path}
+                      fill="none"
+                      stroke="#c6bbff"
+                      strokeDasharray="4 3"
+                      transform={`translate(0 ${((-t.gingivalShiftMm * ppm) / t.heightPx) * 100})`}
+                    />
+                  )}{" "}
+                  {calibrated && t.incisalExtensionMm !== 0 && (
+                    <line
+                      x1="15"
+                      x2="85"
+                      y1={
+                        100 + ((t.incisalExtensionMm * ppm) / t.heightPx) * 100
+                      }
+                      y2={
+                        100 + ((t.incisalExtensionMm * ppm) / t.heightPx) * 100
+                      }
+                      stroke="#94c6ff"
+                      strokeDasharray="4 3"
+                    />
+                  )}
+                </svg>
+                {selected && (
+                  <>
+                    <rect
+                      x={-t.widthPx / 2 - 3 / scale}
+                      y={-t.heightPx / 2 - 3 / scale}
+                      width={t.widthPx + 6 / scale}
+                      height={t.heightPx + 6 / scale}
+                      fill="none"
+                      stroke="#5eead4"
+                      strokeWidth={1 / scale}
+                    />
+                    <text
+                      x="0"
+                      y={-t.heightPx / 2 - 10 / scale}
+                      fill="#e9fff7"
+                      fontSize={11 / scale}
+                      textAnchor="middle"
+                      pointerEvents="none"
+                    >
+                      FDI {t.fdi}
+                    </text>
+                  </>
+                )}
+              </g>
+            );
+          })}
+        {guide !== "none" &&
+          (draftPoints ?? guidePoints ?? []).map((p, i) => (
+            <g
+              key={i}
+              data-point={interactive ? i : undefined}
+              style={{ cursor: "move" }}
+            >
+              <circle cx={p.x} cy={p.y} r={22 / scale} fill="transparent" />
+              <circle
+                cx={p.x}
+                cy={p.y}
+                r={6 / scale}
+                fill="#5eead4"
+                stroke="#fff"
+                strokeWidth={2 / scale}
+              />
+              <text
+                x={p.x + 10 / scale}
+                y={p.y - 10 / scale}
+                fontSize={10 / scale}
+                fill="#fff"
+                pointerEvents="none"
+              >
+                {i + 1}
+              </text>
+            </g>
+          ))}
+      </>
+    );
+  }
   return (
-    <div className="relative w-full h-full flex flex-col bg-clinical-darkest select-none overflow-hidden rounded-xl border border-clinical-border">
-      
-      {/* Top Floating Mini-Bar: Zoom & Viewport controls */}
-      <div className="absolute top-3 left-3 z-30 flex items-center gap-1.5 bg-clinical-surface/90 backdrop-blur-md px-2.5 py-1.5 rounded-lg border border-clinical-border shadow-lg">
-        <button
-          onClick={() => setZoom(prev => Math.max(0.6, prev - 0.2))}
-          className="p-1 rounded text-slate-300 hover:text-white hover:bg-clinical-border text-xs"
-          title="Zoom Out"
-        >
-          <Minimize2 className="w-3.5 h-3.5" />
-        </button>
-        <span className="font-mono text-[11px] text-cyan-400 px-1 font-semibold">
-          {Math.round(zoom * 100)}%
-        </span>
-        <button
-          onClick={() => setZoom(prev => Math.min(3.0, prev + 0.2))}
-          className="p-1 rounded text-slate-300 hover:text-white hover:bg-clinical-border text-xs"
-          title="Zoom In"
-        >
-          <Maximize2 className="w-3.5 h-3.5" />
-        </button>
-        <div className="h-3 w-px bg-slate-700 mx-1" />
-        <button
-          onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
-          className="text-[10px] font-mono text-slate-400 hover:text-slate-200 px-1.5 py-0.5 rounded hover:bg-clinical-border"
-        >
-          RESET
-        </button>
+    <section className="canvas-shell" aria-label="Patient photo editing canvas">
+      <div className="canvas-toolbar">
+        <div className="row">
+          <button
+            className={`btn ${mode === "select" ? "active" : ""}`}
+            onClick={() => setMode("select")}
+            aria-pressed={mode === "select"}
+          >
+            <MousePointer2 size={16} />
+            <span>Select</span>
+          </button>
+          <button
+            className={`btn ${mode === "pan" ? "active" : ""}`}
+            onClick={() => setMode("pan")}
+            aria-pressed={mode === "pan"}
+          >
+            <Hand size={16} />
+            <span>Pan</span>
+          </button>
+          <button
+            className="icon-btn"
+            aria-label="Undo design change"
+            disabled={!canUndo}
+            onClick={onUndo}
+          >
+            <Undo2 size={17} />
+          </button>
+          <button
+            className="icon-btn"
+            aria-label="Redo design change"
+            disabled={!canRedo}
+            onClick={onRedo}
+          >
+            <Redo2 size={17} />
+          </button>
+        </div>
+        <div className="row">
+          <button
+            className="icon-btn"
+            aria-label="Zoom out"
+            onClick={() => setZoom((z) => clamp(z / 1.3, 0.5, 12))}
+          >
+            <ZoomOut size={17} />
+          </button>
+          <button
+            className="icon-btn"
+            aria-label="Zoom in"
+            onClick={() => setZoom((z) => clamp(z * 1.3, 0.5, 12))}
+          >
+            <ZoomIn size={17} />
+          </button>
+          <button
+            className="icon-btn"
+            aria-label="Fit photo to canvas"
+            onClick={() => {
+              setZoom(1);
+              setPan({ x: 0, y: 0 });
+            }}
+          >
+            <Maximize size={17} />
+          </button>
+          <button
+            className="btn"
+            onClick={() => {
+              setMode("select");
+              onGuide("calibration");
+            }}
+          >
+            <Ruler size={16} />
+            <span>Scale</span>
+          </button>
+        </div>
       </div>
-
-      {/* Top Right Mini-Bar: Calibration Tool Toggle */}
-      <div className="absolute top-3 right-3 z-30 flex items-center gap-2">
-        {isCalibrating ? (
-          <div className="flex items-center gap-2 bg-clinical-surface/95 backdrop-blur-md px-3 py-1.5 rounded-lg border border-cyan-500/50 shadow-xl">
-            <span className="text-[11px] text-cyan-300 font-medium">Real Distance:</span>
-            <input
-              type="number"
-              step="0.1"
-              value={knownDistanceMm}
-              onChange={(e) => setKnownDistanceMm(parseFloat(e.target.value) || 1)}
-              className="w-14 bg-clinical-darkest border border-clinical-border rounded px-1.5 py-0.5 text-xs text-white font-mono"
-            />
-            <span className="text-xs text-slate-400 font-mono">mm</span>
-            <button
-              onClick={applyCalibration}
-              className="flex items-center gap-1 bg-cyan-600 hover:bg-cyan-500 text-white px-2 py-0.5 rounded text-xs font-medium"
+      <div ref={ref} className="canvas-viewport">
+        {photo?.url && photo.type !== "video" ? (
+          <>
+            <svg
+              aria-label="Editable smile photo. Use the tooth selector and numeric controls as alternatives to dragging."
+              viewBox={`0 0 ${size.width} ${size.height}`}
+              onPointerDown={down}
+              onPointerMove={move}
+              onPointerUp={up}
+              onPointerCancel={(e) => {
+                if (pointers.current.has(e.pointerId)) cancel();
+              }}
+              onLostPointerCapture={(e) => {
+                if (pointers.current.has(e.pointerId) && drag.current) cancel();
+              }}
             >
-              <Check className="w-3 h-3" />
-              <span>Confirm</span>
-            </button>
-            <button
-              onClick={() => setIsCalibrating(false)}
-              className="text-xs text-slate-400 hover:text-slate-200 px-1"
-            >
-              Cancel
+              <g transform={transform}>{imageLayers()}</g>
+            </svg>
+            {cursor && (
+              <div className="magnifier" aria-hidden="true">
+                <svg
+                  viewBox={`${cursor.x - width * 0.025} ${cursor.y - height * 0.025} ${width * 0.05} ${height * 0.05}`}
+                >
+                  <g>{imageLayers(false)}</g>
+                  <circle
+                    cx={cursor.x}
+                    cy={cursor.y}
+                    r={width * 0.001}
+                    fill="#fff"
+                  />
+                </svg>
+              </div>
+            )}
+            <span className="canvas-caption">
+              {photo.isIllustration
+                ? "Illustrated demo · upload patient photo"
+                : "Original photo · editable design overlay"}
+            </span>
+          </>
+        ) : (
+          <div className="canvas-empty">
+            <ImagePlus size={38} />
+            <h2>
+              {photo?.missing
+                ? "Photo unavailable on this device"
+                : "Add a patient photo"}
+            </h2>
+            <p>
+              {photo?.missing
+                ? "Import a local backup or upload the matching original."
+                : "Start with a frontal maximum-smile photo."}
+            </p>
+            <button className="btn" onClick={onCapture}>
+              Open capture
             </button>
           </div>
-        ) : (
-          <button
-            onClick={() => setIsCalibrating(true)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium backdrop-blur-md shadow-lg border transition-all ${
-              isCalibrated
-                ? 'bg-clinical-surface/90 text-slate-300 border-clinical-border hover:border-cyan-600'
-                : 'bg-amber-950/80 text-amber-200 border-amber-600/80 animate-pulse'
-            }`}
-          >
-            <Ruler className="w-3.5 h-3.5 text-cyan-400" />
-            <span>{isCalibrated ? 'Recalibrate Scale' : 'Calibrate Scale (mm)'}</span>
-          </button>
         )}
       </div>
-
-      {/* Main Viewport & Interactive Canvas */}
-      <div
-        ref={containerRef}
-        className="w-full h-full flex items-center justify-center cursor-crosshair overflow-hidden"
-        onMouseDown={(e) => {
-          if (e.target === containerRef.current || (e.target as HTMLElement).tagName === 'svg') {
-            setIsPanning(true);
-            setPanStart({ x: e.clientX, y: e.clientY });
-          }
-        }}
-        onMouseMove={handleCanvasMouseMove}
-        onMouseUp={handleCanvasMouseUp}
-      >
-        <div
-          className="relative transition-transform duration-75 origin-center"
-          style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-            width: '1000px',
-            height: '650px'
-          }}
-        >
-          {/* Layer 1: Patient Background Photo */}
-          {activePhoto?.url && (
-            <img
-              src={activePhoto.url}
-              alt="Patient Smile"
-              className="absolute inset-0 w-full h-full object-contain pointer-events-none select-none"
-              style={{
-                transform: `rotate(${activePhoto.orientationDeg || 0}deg)`
-              }}
-            />
-          )}
-
-          {/* Layer 2: Vector Guides & Calibration Line SVG */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" viewBox="0 0 1000 650">
-            {/* Facial Midline (Vertical reference: Glabella to Philtrum) */}
-            {showMidline && (
-              <g className="transition-opacity duration-200">
-                <line
-                  x1={currentCase.guides.midline.p1.x}
-                  y1={currentCase.guides.midline.p1.y}
-                  x2={currentCase.guides.midline.p2.x}
-                  y2={currentCase.guides.midline.p2.y}
-                  stroke="#06B6D4"
-                  strokeWidth="1.8"
-                  strokeDasharray="6 4"
-                />
-                <circle cx={currentCase.guides.midline.p1.x} cy={currentCase.guides.midline.p1.y} r="4" fill="#06B6D4" />
-                <circle cx={currentCase.guides.midline.p2.x} cy={currentCase.guides.midline.p2.y} r="4" fill="#06B6D4" />
-                <text x={currentCase.guides.midline.p1.x + 8} y={currentCase.guides.midline.p1.y + 10} fill="#06B6D4" fontSize="10" fontFamily="monospace">
-                  FACIAL MIDLINE
-                </text>
-              </g>
-            )}
-
-            {/* Bipupillary Horizontal Plane Reference */}
-            {showMidline && (
-              <g className="transition-opacity duration-200 opacity-60">
-                <line
-                  x1={currentCase.guides.bipupillary.p1.x}
-                  y1={currentCase.guides.bipupillary.p1.y}
-                  x2={currentCase.guides.bipupillary.p2.x}
-                  y2={currentCase.guides.bipupillary.p2.y}
-                  stroke="#14B8A6"
-                  strokeWidth="1.2"
-                  strokeDasharray="4 4"
-                />
-                <text x={currentCase.guides.bipupillary.p1.x} y={currentCase.guides.bipupillary.p1.y - 6} fill="#14B8A6" fontSize="9" fontFamily="monospace">
-                  BIPUPILLARY HORIZONTAL
-                </text>
-              </g>
-            )}
-
-            {/* Smile Arc (Spline along lower lip) */}
-            {showSmileArc && (
-              <g className="transition-opacity duration-200">
-                <path
-                  d={`M ${currentCase.guides.smileArc[0].x} ${currentCase.guides.smileArc[0].y} Q ${currentCase.guides.smileArc[1].x} ${currentCase.guides.smileArc[1].y} ${currentCase.guides.smileArc[2].x} ${currentCase.guides.smileArc[2].y}`}
-                  fill="none"
-                  stroke="#F59E0B"
-                  strokeWidth="2.2"
-                  strokeDasharray="5 3"
-                />
-                <text x={currentCase.guides.smileArc[1].x - 30} y={currentCase.guides.smileArc[1].y + 18} fill="#F59E0B" fontSize="10" fontFamily="monospace" fontWeight="bold">
-                  SMILE ARC CURVE
-                </text>
-              </g>
-            )}
-
-            {/* Active Calibration Line */}
-            {isCalibrating && (
-              <g className="pointer-events-auto">
-                <line
-                  x1={calibPointA.x}
-                  y1={calibPointA.y}
-                  x2={calibPointB.x}
-                  y2={calibPointB.y}
-                  stroke="#22D3EE"
-                  strokeWidth="2.5"
-                />
-                <circle
-                  cx={calibPointA.x}
-                  cy={calibPointA.y}
-                  r="7"
-                  fill="#06B6D4"
-                  stroke="#FFFFFF"
-                  strokeWidth="2"
-                  className="cursor-move"
-                />
-                <circle
-                  cx={calibPointB.x}
-                  cy={calibPointB.y}
-                  r="7"
-                  fill="#06B6D4"
-                  stroke="#FFFFFF"
-                  strokeWidth="2"
-                  className="cursor-move"
-                />
-              </g>
-            )}
-          </svg>
-
-          {/* Layer 3: Interactive Tooth 2D Outlines (FDI 13 to 23) */}
-          {showTeethOverlay && (
-            <div className="absolute inset-0 pointer-events-auto z-20" style={{ opacity: overlayOpacity }}>
-              {[13, 12, 11, 21, 22, 23].map((fdi) => {
-                const tooth = teeth[fdi];
-                if (!tooth) return null;
-
-                const isSelected = selectedFdi === fdi;
-                const toothType = getToothTypeFromFdi(fdi);
-                const isRight = isRightQuadrant(fdi);
-                const template = TOOTH_TEMPLATES[tooth.form] || TOOTH_TEMPLATES.rounded;
-                const outlinePath = template.outlinePath(toothType, isRight);
-
-                // Tooth box size in canvas pixels
-                const toothWidthPx = isCalibrated ? tooth.width * pixelsPerMm : tooth.width * 10;
-                const toothHeightPx = isCalibrated ? tooth.height * pixelsPerMm : tooth.height * 10;
-                const leftPx = (tooth.x / 100) * 1000 - toothWidthPx / 2;
-                const topPx = (tooth.y / 100) * 650 - toothHeightPx / 2;
-
-                // Proposed gingival movement in px
-                const gingivalShiftPx = isCalibrated ? (tooth.gingivalShiftMm || 0) * pixelsPerMm : 0;
-                const incisalExtensionPx = isCalibrated ? (tooth.incisalExtensionMm || 0) * pixelsPerMm : 0;
-
-                return (
-                  <div
-                    key={fdi}
-                    onMouseDown={(e) => handleToothMouseDown(fdi, e)}
-                    className={`absolute cursor-move transition-shadow duration-100 group ${
-                      isSelected ? 'ring-2 ring-cyan-400 ring-offset-1 ring-offset-clinical-darkest shadow-xl' : 'hover:ring-1 hover:ring-teal-400/80'
-                    }`}
-                    style={{
-                      left: `${leftPx}px`,
-                      top: `${topPx}px`,
-                      width: `${toothWidthPx}px`,
-                      height: `${toothHeightPx}px`,
-                      transform: `rotate(${tooth.rotation}deg)`,
-                      transformOrigin: '50% 50%'
-                    }}
-                  >
-                    {/* SVG Tooth Outline */}
-                    <svg viewBox="0 0 100 100" className="w-full h-full overflow-visible">
-                      {/* Proposed Gingival Shift Indicator (Apical dashed contour) */}
-                      {tooth.gingivalShiftMm > 0.1 && (
-                        <path
-                          d={outlinePath}
-                          fill="none"
-                          stroke="#34D399"
-                          strokeWidth="2.5"
-                          strokeDasharray="4 2"
-                          style={{
-                            transform: `translateY(-${(gingivalShiftPx / toothHeightPx) * 100}%)`,
-                            transformOrigin: '50% 0%'
-                          }}
-                        />
-                      )}
-
-                      {/* Main Tooth Contour */}
-                      <path
-                        d={outlinePath}
-                        fill={isSelected ? 'rgba(6, 182, 212, 0.18)' : 'rgba(20, 184, 166, 0.10)'}
-                        stroke={isSelected ? '#06B6D4' : '#14B8A6'}
-                        strokeWidth={isSelected ? '2.5' : '1.8'}
-                        className="transition-colors"
-                      />
-
-                      {/* Proposed Incisal Extension (Coronal dashed line) */}
-                      {tooth.incisalExtensionMm > 0.1 && (
-                        <line
-                          x1="16"
-                          y1={94 + (incisalExtensionPx / toothHeightPx) * 100}
-                          x2="84"
-                          y2={94 + (incisalExtensionPx / toothHeightPx) * 100}
-                          stroke="#38BDF8"
-                          strokeWidth="2.5"
-                          strokeDasharray="3 2"
-                        />
-                      )}
-                    </svg>
-
-                    {/* Badge: FDI Number + Dimension */}
-                    <div className="absolute -top-6 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-clinical-darkest/90 border border-clinical-border px-1.5 py-0.5 rounded text-[10px] font-mono pointer-events-none whitespace-nowrap shadow-md">
-                      <span className={isSelected ? 'text-cyan-400 font-bold' : 'text-slate-300'}>
-                        #{fdi}
-                      </span>
-                      <span className="text-slate-400">
-                        {isCalibrated ? `${tooth.width.toFixed(1)}×${tooth.height.toFixed(1)}mm` : `${Math.round(tooth.width)}%`}
-                      </span>
-                    </div>
-
-                    {/* Touch handles for iPad / Touch devices (>= 44px hit bounds) */}
-                    {isSelected && (
-                      <>
-                        <div className="absolute -top-2 -left-2 w-5 h-5 bg-cyan-500 rounded-full border-2 border-white shadow-md cursor-nwse-resize" />
-                        <div className="absolute -top-2 -right-2 w-5 h-5 bg-cyan-500 rounded-full border-2 border-white shadow-md cursor-nesw-resize" />
-                        <div className="absolute -bottom-2 -left-2 w-5 h-5 bg-cyan-500 rounded-full border-2 border-white shadow-md cursor-nesw-resize" />
-                        <div className="absolute -bottom-2 -right-2 w-5 h-5 bg-cyan-500 rounded-full border-2 border-white shadow-md cursor-nwse-resize" />
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-        </div>
-      </div>
-
-      {/* Bottom Canvas Footer: Calibration details & Guidance */}
-      <div className="bg-clinical-surface/80 border-t border-clinical-border px-3 py-1.5 flex items-center justify-between text-xs text-slate-400 font-mono">
-        <div className="flex items-center gap-3">
-          <span>Active Tooth: <strong className="text-cyan-400">FDI #{selectedFdi}</strong></span>
-          <span>Scale: {isCalibrated ? `${pixelsPerMm.toFixed(2)} px/mm` : 'Uncalibrated Proportions'}</span>
-        </div>
-        <div className="hidden sm:flex items-center gap-4 text-[11px]">
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-cyan-400"></span> Tooth Contour
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-emerald-400"></span> Proposed Gingival Movement
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 rounded-full bg-amber-400"></span> Smile Arc
-          </span>
-        </div>
-      </div>
-
-    </div>
+      <footer className="canvas-footer">
+        <span>
+          FDI {selectedFdi} · {Math.round(zoom * 100)}% zoom
+        </span>
+        <span>
+          {calibrated
+            ? "Photo scale confirmed · projected dimensions"
+            : "Photo scale pending · relative design"}
+        </span>
+        <span className="footer-details">
+          Teal: tooth design · Violet: proposed margin
+        </span>
+      </footer>
+    </section>
   );
-};
+}

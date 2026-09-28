@@ -1,0 +1,5 @@
+project_id = "digital-smile-design"
+
+[functions.smile-ai]
+verify_jwt = true
+entrypoint = "./functions/smile-ai/index.ts"

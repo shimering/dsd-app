@@ -1,276 +1,533 @@
-import React from 'react';
-import { 
-  ToothMeasurement, 
-  ToothTransform, 
-  ClinicalEvaluationResult, 
-  PeriodontalPhenotype, 
-  RestorativeStatus 
-} from '../../types';
-import { evaluatePeriodontalCandidate } from '../../lib/clinical-engine';
-import { 
-  Activity, 
-  AlertTriangle, 
-  CheckCircle2, 
-  HelpCircle, 
-  ShieldAlert, 
-  Scissors, 
-  Layers 
-} from 'lucide-react';
-
-interface PeriodontalInspectorProps {
-  selectedFdi: number;
-  onSelectTooth: (fdi: number) => void;
-  measurements: Record<number, ToothMeasurement>;
-  toothTransforms: Record<number, ToothTransform>;
-  onUpdateMeasurement: (fdi: number, updates: Partial<ToothMeasurement>) => void;
-  isCalibrated: boolean;
-}
-
-export const PeriodontalInspector: React.FC<PeriodontalInspectorProps> = ({
-  selectedFdi,
-  onSelectTooth,
-  measurements,
-  toothTransforms,
-  onUpdateMeasurement,
-  isCalibrated
-}) => {
-  const currentMeasurement = measurements[selectedFdi];
-  const currentTransform = toothTransforms[selectedFdi];
-  const evaluation: ClinicalEvaluationResult = evaluatePeriodontalCandidate(
-    currentMeasurement,
-    currentTransform,
-    isCalibrated
-  );
-
-  const teethList = [13, 12, 11, 21, 22, 23];
-
+import {
+  Case,
+  FindingKey,
+  MeasuredValue,
+  MeasurementState,
+  SITES,
+  Site,
+  ToothMeasurement,
+} from "../../types";
+import { activeRevision, blankValue, now } from "../../lib/case-model";
+import {
+  evaluatePeriodontalCandidate,
+  confirmedClinical,
+} from "../../lib/clinical-engine";
+import { Notice, NumberField } from "../ui";
+import { ToothPicker } from "./ToothCustomizer";
+function Measurement({
+  label,
+  value,
+  onChange,
+  signed = false,
+}: {
+  label: string;
+  value: MeasuredValue;
+  onChange: (v: MeasuredValue) => void;
+  signed?: boolean;
+}) {
+  const change = (patch: Partial<MeasuredValue>) =>
+    onChange({
+      ...value,
+      ...patch,
+      recordedAt: now(),
+      confirmed: patch.confirmed ?? false,
+    });
   return (
-    <div className="flex flex-col gap-4 p-4 bg-clinical-surface rounded-xl border border-clinical-border h-full overflow-y-auto">
-      
-      {/* Top FDI Tooth Switcher Bar */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <Activity className="w-4 h-4 text-cyan-400" />
-            <h3 className="font-semibold text-sm text-slate-100">Periodontal & Bone Findings</h3>
-          </div>
-          <span className="text-[11px] font-mono text-slate-400">EFP 2026 Engine</span>
-        </div>
-
-        {/* 6 Tooth Pill Buttons */}
-        <div className="grid grid-cols-6 gap-1 bg-clinical-darkest p-1 rounded-lg border border-clinical-border">
-          {teethList.map((fdi) => {
-            const isSelected = selectedFdi === fdi;
-            const evalResult = evaluatePeriodontalCandidate(
-              measurements[fdi],
-              toothTransforms[fdi],
-              isCalibrated
-            );
-
-            let dotColor = 'bg-slate-500';
-            if (evalResult.outcome === 'candidate_gingivectomy') dotColor = 'bg-emerald-400';
-            if (evalResult.outcome === 'candidate_crown_lengthening') dotColor = 'bg-sky-400';
-            if (evalResult.outcome === 'further_assessment_needed') dotColor = 'bg-amber-400';
-            if (evalResult.outcome === 'referral_periodontist') dotColor = 'bg-rose-400';
-
-            return (
-              <button
-                key={fdi}
-                onClick={() => onSelectTooth(fdi)}
-                className={`py-1.5 px-1 rounded flex flex-col items-center gap-1 transition-all ${
-                  isSelected
-                    ? 'bg-clinical-surface text-cyan-300 font-bold border border-cyan-700/60 shadow-sm'
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <span className="text-xs font-mono">#{fdi}</span>
-                <span className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
-              </button>
-            );
-          })}
-        </div>
+    <div className="stack" style={{ gap: 9 }}>
+      <div className="two-cols">
+        <NumberField
+          label={label}
+          value={value.value}
+          signed={signed}
+          min={signed ? undefined : 0}
+          onChange={(v) =>
+            change({ value: v, state: v === null ? "not_measured" : "known" })
+          }
+        />
+        <label className="field">
+          <span>Value status</span>
+          <select
+            value={value.state}
+            onChange={(e) =>
+              change({
+                state: e.target.value as MeasurementState,
+                value: e.target.value === "known" ? value.value : null,
+              })
+            }
+          >
+            <option value="not_measured">Not measured</option>
+            <option value="known">Recorded</option>
+            <option value="not_assessable">Not assessable</option>
+            <option value="not_applicable">Not applicable</option>
+          </select>
+        </label>
       </div>
-
-      {/* Clinical Measurement Inputs */}
-      <div className="bg-clinical-darkest/70 p-3 rounded-lg border border-clinical-border space-y-3">
-        <div className="text-xs font-semibold text-slate-200 flex items-center justify-between">
-          <span>Clinical Probing Findings (#{selectedFdi}):</span>
-          <span className="text-[10px] text-cyan-400 font-mono">Clinician Recorded</span>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          {/* Bone Sounding */}
-          <div>
-            <label className="text-[11px] text-slate-400 block mb-1">
-              Bone Sounding (FGM to Crest):
-            </label>
-            <div className="flex items-center gap-1.5">
-              <input
-                type="number"
-                step="0.1"
-                placeholder="e.g. 4.2"
-                value={currentMeasurement?.boneSoundingMm ?? ''}
-                onChange={(e) => onUpdateMeasurement(selectedFdi, {
-                  boneSoundingMm: e.target.value === '' ? undefined : parseFloat(e.target.value)
-                })}
-                className="w-full bg-clinical-surface border border-clinical-border rounded px-2 py-1 text-xs text-white font-mono focus:border-cyan-500 focus:outline-none"
-              />
-              <span className="text-xs font-mono text-slate-400">mm</span>
-            </div>
-          </div>
-
-          {/* Keratinized Tissue Width (KTW) */}
-          <div>
-            <label className="text-[11px] text-slate-400 block mb-1">
-              Keratinized Tissue (KTW):
-            </label>
-            <div className="flex items-center gap-1.5">
-              <input
-                type="number"
-                step="0.1"
-                placeholder="e.g. 5.5"
-                value={currentMeasurement?.keratinizedTissueWidthMm ?? ''}
-                onChange={(e) => onUpdateMeasurement(selectedFdi, {
-                  keratinizedTissueWidthMm: e.target.value === '' ? undefined : parseFloat(e.target.value)
-                })}
-                className="w-full bg-clinical-surface border border-clinical-border rounded px-2 py-1 text-xs text-white font-mono focus:border-cyan-500 focus:outline-none"
-              />
-              <span className="text-xs font-mono text-slate-400">mm</span>
-            </div>
-          </div>
-
-          {/* Probing Depth */}
-          <div>
-            <label className="text-[11px] text-slate-400 block mb-1">
-              Sulcus Probing Depth:
-            </label>
-            <div className="flex items-center gap-1.5">
-              <input
-                type="number"
-                step="0.5"
-                placeholder="e.g. 2.0"
-                value={currentMeasurement?.probingDepthMm ?? ''}
-                onChange={(e) => onUpdateMeasurement(selectedFdi, {
-                  probingDepthMm: e.target.value === '' ? undefined : parseFloat(e.target.value)
-                })}
-                className="w-full bg-clinical-surface border border-clinical-border rounded px-2 py-1 text-xs text-white font-mono focus:border-cyan-500 focus:outline-none"
-              />
-              <span className="text-xs font-mono text-slate-400">mm</span>
-            </div>
-          </div>
-
-          {/* CEJ Location */}
-          <div>
-            <label className="text-[11px] text-slate-400 block mb-1">
-              FGM to CEJ:
-            </label>
-            <div className="flex items-center gap-1.5">
-              <input
-                type="number"
-                step="0.1"
-                placeholder="e.g. 1.8"
-                value={currentMeasurement?.cejLocationMm ?? ''}
-                onChange={(e) => onUpdateMeasurement(selectedFdi, {
-                  cejLocationMm: e.target.value === '' ? undefined : parseFloat(e.target.value)
-                })}
-                className="w-full bg-clinical-surface border border-clinical-border rounded px-2 py-1 text-xs text-white font-mono focus:border-cyan-500 focus:outline-none"
-              />
-              <span className="text-xs font-mono text-slate-400">mm</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Phenotype & Restorative status */}
-        <div className="grid grid-cols-2 gap-3 pt-2 border-t border-clinical-border/60">
-          <div>
-            <label className="text-[11px] text-slate-400 block mb-1">Periodontal Phenotype:</label>
+      <details>
+        <summary
+          style={{
+            fontSize: 12,
+            color: "var(--muted)",
+            cursor: "pointer",
+          }}
+        >
+          Source & confirmation
+        </summary>
+        <div className="stack" style={{ gap: 9, marginTop: 10 }}>
+          <label className="field">
+            <span>Source</span>
             <select
-              value={currentMeasurement?.phenotype || 'thick_flat'}
-              onChange={(e) => onUpdateMeasurement(selectedFdi, { phenotype: e.target.value as PeriodontalPhenotype })}
-              className="w-full bg-clinical-surface border border-clinical-border rounded px-2 py-1 text-xs text-slate-200"
+              value={value.source}
+              onChange={(e) =>
+                change({ source: e.target.value as MeasuredValue["source"] })
+              }
             >
-              <option value="thick_flat">Thick Flat (Favorable)</option>
-              <option value="thick_scalloped">Thick Scalloped</option>
-              <option value="thin_scalloped">Thin Scalloped (High Risk)</option>
+              <option value="clinical">Clinical measurement</option>
+              <option value="photo_estimate">Photo estimate</option>
             </select>
-          </div>
-
-          <div>
-            <label className="text-[11px] text-slate-400 block mb-1">Restorative Status:</label>
-            <select
-              value={currentMeasurement?.restorativeStatus || 'natural'}
-              onChange={(e) => onUpdateMeasurement(selectedFdi, { restorativeStatus: e.target.value as RestorativeStatus })}
-              className="w-full bg-clinical-surface border border-clinical-border rounded px-2 py-1 text-xs text-slate-200"
-            >
-              <option value="natural">Natural Dentition</option>
-              <option value="composite">Composite Restoration</option>
-              <option value="veneer">Ceramic Veneer</option>
-              <option value="crown">Full Crown</option>
-              <option value="wear_facet">Severe Incisal Wear</option>
-              <option value="fractured">Fractured Incisal Edge</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Deterministic Biological Clearance Evaluation Card */}
-      <div className={`p-3.5 rounded-lg border transition-all ${
-        evaluation.outcome === 'candidate_gingivectomy'
-          ? 'bg-emerald-950/40 border-emerald-700/80 text-emerald-200'
-          : evaluation.outcome === 'candidate_crown_lengthening'
-          ? 'bg-sky-950/40 border-sky-700/80 text-sky-200'
-          : evaluation.outcome === 'referral_periodontist'
-          ? 'bg-rose-950/40 border-rose-700/80 text-rose-200'
-          : 'bg-amber-950/40 border-amber-700/80 text-amber-200'
-      }`}>
-        <div className="flex items-start gap-2.5 mb-2">
-          {evaluation.outcome === 'candidate_gingivectomy' && <Scissors className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />}
-          {evaluation.outcome === 'candidate_crown_lengthening' && <Layers className="w-5 h-5 text-sky-400 shrink-0 mt-0.5" />}
-          {evaluation.outcome === 'referral_periodontist' && <ShieldAlert className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />}
-          {evaluation.outcome === 'further_assessment_needed' && <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />}
-          {evaluation.outcome === 'restorative_only' && <CheckCircle2 className="w-5 h-5 text-teal-400 shrink-0 mt-0.5" />}
-
-          <div>
-            <h4 className="font-bold text-xs leading-snug">
-              {evaluation.headline}
-            </h4>
-            <div className="flex items-center gap-2 mt-1 text-[11px] font-mono">
-              <span>Proposed &Delta;GM: +{(currentTransform?.gingivalShiftMm || 0).toFixed(1)}mm</span>
-              {evaluation.remainingBoneClearanceMm !== undefined && (
-                <span>| Bone Crest Clearance: {evaluation.remainingBoneClearanceMm.toFixed(1)}mm</span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Detailed Biological Rationale List */}
-        <div className="mt-2.5 pt-2.5 border-t border-white/10 space-y-1 text-[11px]">
-          {evaluation.supportingFindings.map((finding, idx) => (
-            <div key={idx} className="flex items-start gap-1.5 opacity-90">
-              <span className="text-white/60">•</span>
-              <span>{finding}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* Mandatory Clinician Override Checklist */}
-        {evaluation.requiresClinicianConfirmation && (
-          <div className="mt-3 pt-2 border-t border-white/10 flex items-center justify-between text-[11px]">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                defaultChecked={currentMeasurement?.boneSoundingMm !== undefined}
-                className="accent-cyan-500 rounded"
-              />
-              <span className="font-medium">Clinician confirms biological clearance</span>
-            </label>
-            <span className="text-[10px] uppercase font-mono tracking-wider opacity-75">
-              Requires In-Person Probe
+          </label>
+          <label className="field">
+            <span>Method / reference</span>
+            <input
+              value={value.method}
+              onChange={(e) => change({ method: e.target.value })}
+              placeholder="Instrument and reference"
+            />
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={value.confirmed}
+              disabled={
+                value.value === null ||
+                value.state !== "known" ||
+                (!signed && value.value < 0) ||
+                !value.method.trim()
+              }
+              onChange={(e) => change({ confirmed: e.target.checked })}
+            />
+            <span>
+              Clinician confirms this value
+              <br />
+              <small className="muted">
+                Recorded {new Date(value.recordedAt).toLocaleDateString()}
+              </small>
             </span>
-          </div>
-        )}
-      </div>
-
+          </label>
+        </div>
+      </details>
     </div>
   );
-};
+}
+export function PeriodontalInspector({
+  currentCase,
+  selectedFdi,
+  onSelect,
+  onChange,
+}: {
+  currentCase: Case;
+  selectedFdi: number;
+  onSelect: (n: number) => void;
+  onChange: (c: Case) => void;
+}) {
+  const m = currentCase.measurements[selectedFdi],
+    site = m.evaluationSite,
+    findings = m.sites[site],
+    result = evaluatePeriodontalCandidate(
+      m,
+      activeRevision(currentCase).teeth[selectedFdi],
+      currentCase.assessment.confirmed &&
+        currentCase.assessment.cause !== "unknown",
+    );
+  const update = (patch: Partial<ToothMeasurement>) =>
+    onChange({
+      ...currentCase,
+      measurements: {
+        ...currentCase.measurements,
+        [selectedFdi]: { ...m, ...patch },
+      },
+    });
+  const criteria = (patch: Partial<ToothMeasurement["criteria"]>) =>
+    update({
+      criteria: {
+        ...m.criteria,
+        ...patch,
+        confirmed: patch.confirmed ?? false,
+      },
+    });
+  return (
+    <div className="stack">
+      <ToothPicker selected={selectedFdi} onSelect={onSelect} />
+      <details open>
+        <summary>
+          <strong>Patient assessment</strong>
+        </summary>
+        <div className="stack" style={{ marginTop: 14 }}>
+          <label className="field">
+            <span>Clinical display assessment</span>
+            <select
+              value={currentCase.assessment.cause}
+              onChange={(e) =>
+                onChange({
+                  ...currentCase,
+                  assessment: {
+                    ...currentCase.assessment,
+                    cause: e.target.value as Case["assessment"]["cause"],
+                    confirmed: false,
+                  },
+                })
+              }
+            >
+              <option value="unknown">Unknown / awaiting assessment</option>
+              <option value="soft_tissue">
+                Soft tissue / eruption related
+              </option>
+              <option value="lip">Lip related</option>
+              <option value="skeletal">Skeletal</option>
+              <option value="dentoalveolar">Dentoalveolar</option>
+              <option value="wear">Wear / restorative</option>
+              <option value="mixed">Mixed causes</option>
+            </select>
+          </label>
+          <details>
+            <summary>Facial and smile measurements</summary>
+            <div className="stack" style={{ marginTop: 14 }}>
+              {(
+                [
+                  ["restDisplay", "Upper incisor display at rest"],
+                  [
+                    "gingivalDisplay",
+                    "Midbuccal gingival display at maximum smile",
+                  ],
+                  [
+                    "lipLength",
+                    "Upper lip length (subnasale to upper-lip lower border)",
+                  ],
+                  [
+                    "lipMobility",
+                    "Upper lip elevation (rest to maximum smile)",
+                  ],
+                ] as const
+              ).map(([key, label]) => (
+                <Measurement
+                  key={key}
+                  label={label}
+                  value={
+                    currentCase.assessment.facialMeasurements?.[key] ??
+                    blankValue()
+                  }
+                  onChange={(v) =>
+                    onChange({
+                      ...currentCase,
+                      assessment: {
+                        ...currentCase.assessment,
+                        confirmed: false,
+                        facialMeasurements: {
+                          restDisplay: blankValue(),
+                          gingivalDisplay: blankValue(),
+                          lipLength: blankValue(),
+                          lipMobility: blankValue(),
+                          ...currentCase.assessment.facialMeasurements,
+                          [key]: v,
+                        },
+                      },
+                    })
+                  }
+                />
+              ))}
+            </div>
+          </details>
+          <label className="field">
+            <span>Assessment notes & indicated records</span>
+            <textarea
+              placeholder="Lip length/mobility, display at rest, occlusion, wear, radiographic findings and external reviews where indicated"
+              value={currentCase.assessment.notes}
+              onChange={(e) =>
+                onChange({
+                  ...currentCase,
+                  assessment: {
+                    ...currentCase.assessment,
+                    notes: e.target.value,
+                    confirmed: false,
+                  },
+                })
+              }
+            />
+          </label>
+          <label className="field">
+            <span>Reviewing clinician</span>
+            <input
+              value={currentCase.assessment.clinician}
+              onChange={(e) =>
+                onChange({
+                  ...currentCase,
+                  assessment: {
+                    ...currentCase.assessment,
+                    clinician: e.target.value,
+                    confirmed: false,
+                  },
+                })
+              }
+            />
+          </label>
+          <label className="check">
+            <input
+              type="checkbox"
+              disabled={
+                !currentCase.assessment.clinician.trim() ||
+                currentCase.assessment.cause === "unknown"
+              }
+              checked={currentCase.assessment.confirmed}
+              onChange={(e) =>
+                onChange({
+                  ...currentCase,
+                  assessment: {
+                    ...currentCase.assessment,
+                    confirmed: e.target.checked,
+                  },
+                })
+              }
+            />
+            <span>
+              I reviewed the examination, function and indicated diagnostic
+              records. This assessment is clinician confirmed.
+            </span>
+          </label>
+        </div>
+      </details>
+      <div className="divider" />
+      <h3>FDI {selectedFdi} · site-specific findings</h3>
+      <label className="field">
+        <span>Clinical site</span>
+        <select
+          value={site}
+          onChange={(e) =>
+            update({
+              evaluationSite: e.target.value as Site,
+              criteria: { ...m.criteria, confirmed: false },
+            })
+          }
+        >
+          {SITES.map((s) => (
+            <option key={s} value={s}>
+              {s} ·{" "}
+              {
+                {
+                  MB: "mesiobuccal",
+                  B: "midbuccal",
+                  DB: "distobuccal",
+                  ML: "mesiolingual",
+                  L: "midlingual",
+                  DL: "distolingual",
+                }[s]
+              }
+            </option>
+          ))}
+        </select>
+      </label>
+      {(
+        [
+          ["probingDepth", "Probing depth"],
+          ["boneSounding", "Margin to bone crest"],
+          ["ktw", "Keratinized tissue width"],
+          ["marginToCej", "Margin position relative to CEJ"],
+          ["finishLineDepth", "Planned finish-line depth"],
+        ] as [FindingKey, string][]
+      ).map(([key, label]) => (
+        <Measurement
+          key={key}
+          label={label}
+          value={findings[key]}
+          signed={key === "marginToCej"}
+          onChange={(v) =>
+            update({ sites: { ...m.sites, [site]: { ...findings, [key]: v } } })
+          }
+        />
+      ))}
+      <p className="muted" style={{ fontSize: 12 }}>
+        CEJ sign: + margin apical to CEJ (recession), − coronal. CAL from
+        co-located confirmed values is probing depth + signed CEJ position;
+        alternate references require clinical documentation.
+      </p>
+      {confirmedClinical(findings.probingDepth) &&
+        findings.probingDepth.value >= 0 &&
+        confirmedClinical(findings.marginToCej) && (
+          <span className="badge">
+            Calculated attachment level:{" "}
+            {(findings.probingDepth.value + findings.marginToCej.value).toFixed(
+              1,
+            )}{" "}
+            mm
+          </span>
+        )}
+      <div className="two-cols">
+        {(["bleeding", "suppuration"] as const).map((key) => (
+          <label className="field" key={key}>
+            <span>
+              {key === "bleeding" ? "Bleeding on probing" : "Suppuration"}
+            </span>
+            <select
+              value={findings[key]}
+              onChange={(e) =>
+                update({
+                  sites: {
+                    ...m.sites,
+                    [site]: { ...findings, [key]: e.target.value },
+                  },
+                })
+              }
+            >
+              <option value="unknown">Unknown</option>
+              <option value="no">No</option>
+              <option value="yes">Yes</option>
+            </select>
+          </label>
+        ))}
+      </div>
+      <Measurement
+        label="Current clinical width"
+        value={m.currentWidth}
+        onChange={(v) => update({ currentWidth: v })}
+      />
+      <Measurement
+        label="Current clinical height"
+        value={m.currentHeight}
+        onChange={(v) => update({ currentHeight: v })}
+      />
+      <label className="field">
+        <span>Periodontal phenotype</span>
+        <select
+          value={m.phenotype}
+          onChange={(e) =>
+            update({
+              phenotype: e.target.value as ToothMeasurement["phenotype"],
+            })
+          }
+        >
+          <option value="unknown">Unknown</option>
+          <option value="thin_scalloped">Thin / scalloped</option>
+          <option value="thick_flat">Thick / flat</option>
+          <option value="thick_scalloped">Thick / scalloped</option>
+        </select>
+      </label>
+      <label className="field">
+        <span>Current restorative status</span>
+        <select
+          value={m.restorativeStatus}
+          onChange={(e) =>
+            update({
+              restorativeStatus: e.target
+                .value as ToothMeasurement["restorativeStatus"],
+            })
+          }
+        >
+          {[
+            "unknown",
+            "natural",
+            "composite",
+            "veneer",
+            "crown",
+            "implant",
+            "wear_facet",
+            "fractured",
+          ].map((s) => (
+            <option value={s} key={s}>
+              {s.replaceAll("_", " ")}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="divider" />
+      <h3>Scenario criteria</h3>
+      <Notice>
+        Enter criteria appropriate to this patient and site. The app does not
+        assume universal clearance or tissue thresholds.
+      </Notice>
+      <NumberField
+        label="Minimum finish-line-to-crest criterion"
+        value={m.criteria.minimumClearanceMm}
+        min={0.1}
+        onChange={(v) => criteria({ minimumClearanceMm: v })}
+      />
+      <NumberField
+        label="Minimum remaining KTW criterion"
+        value={m.criteria.minimumKtwMm}
+        min={0}
+        onChange={(v) => criteria({ minimumKtwMm: v })}
+      />
+      <label className="field">
+        <span>Criteria reference / clinical reasoning</span>
+        <textarea
+          value={m.criteria.reference}
+          onChange={(e) => criteria({ reference: e.target.value })}
+        />
+      </label>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={m.criteria.excisionAssumptionConfirmed}
+          onChange={(e) =>
+            criteria({ excisionAssumptionConfirmed: e.target.checked })
+          }
+        />
+        <span>
+          Simple-excision geometry applies for the projected KTW calculation.
+        </span>
+      </label>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={m.criteria.softTissueFeasible}
+          onChange={(e) => criteria({ softTissueFeasible: e.target.checked })}
+        />
+        <span>I assessed soft-tissue-only feasibility.</span>
+      </label>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={m.criteria.confirmed}
+          disabled={
+            !m.criteria.reference.trim() ||
+            m.criteria.minimumClearanceMm === null ||
+            m.criteria.minimumClearanceMm <= 0 ||
+            m.criteria.minimumKtwMm === null ||
+            m.criteria.minimumKtwMm < 0 ||
+            !currentCase.assessment.clinician.trim()
+          }
+          onChange={(e) =>
+            criteria({
+              confirmed: e.target.checked,
+              site,
+              confirmedAt: now(),
+              confirmedBy: currentCase.assessment.clinician.trim(),
+            })
+          }
+        />
+        <span>I confirm these individualized criteria.</span>
+      </label>
+      {m.criteria.confirmed && (
+        <p className="muted">
+          Criteria for {m.criteria.site ?? "unconfirmed site"} ·{" "}
+          {m.criteria.confirmedBy ?? "reviewer pending"} ·{" "}
+          {m.criteria.confirmedAt
+            ? new Date(m.criteria.confirmedAt).toLocaleDateString()
+            : "confirmation date pending"}
+        </p>
+      )}
+      <label className="field">
+        <span>Tooth-specific clinical notes</span>
+        <textarea
+          value={m.clinicianNotes}
+          onChange={(e) => update({ clinicianNotes: e.target.value })}
+        />
+      </label>
+      <Notice tone="warning">
+        <strong>{result.headline}</strong>
+        <ul style={{ paddingLeft: 16, marginTop: 8 }}>
+          {[...result.supportingFindings, ...result.unresolved].map((s, i) => (
+            <li key={i}>{s}</li>
+          ))}
+        </ul>
+      </Notice>
+    </div>
+  );
+}

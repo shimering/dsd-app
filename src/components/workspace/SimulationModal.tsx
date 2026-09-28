@@ -1,242 +1,353 @@
-import React, { useState } from 'react';
-import { Case, SimulationJob } from '../../types';
-import { 
-  Sparkles, 
-  X, 
-  CheckCircle2, 
-  AlertCircle, 
-  ShieldCheck, 
-  Download, 
-  SlidersHorizontal, 
-  Lock 
-} from 'lucide-react';
-
-interface SimulationModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  currentCase: Case;
-  onSaveSimulation: (sim: SimulationJob) => void;
-  onGrantConsent: () => void;
-}
-
-export const SimulationModal: React.FC<SimulationModalProps> = ({
-  isOpen,
-  onClose,
+import { useEffect, useState } from "react";
+import { CheckCircle2, Download, Loader2, Sparkles } from "lucide-react";
+import { Case, SimulationJob } from "../../types";
+import { activePhoto, hasConsent, isStale, uid } from "../../lib/case-model";
+import { requestAi } from "../../lib/gemini";
+import {
+  compositeSimulation,
+  exportSimulation,
+  MouthMask,
+} from "../../lib/media";
+import { readMedia, saveMedia } from "../../lib/storage";
+import { Dialog, Notice, NumberField, errorText } from "../ui";
+import { ConsentPanel } from "./ConsentPanel";
+export function SimulationModal({
   currentCase,
-  onSaveSimulation,
-  onGrantConsent
-}) => {
-  const [sliderPos, setSliderPos] = useState<number>(50);
-  const [reviewStatus, setReviewStatus] = useState<'pending_review' | 'dentist_accepted' | 'dentist_rejected'>('pending_review');
-  const [isSimulating, setIsSimulating] = useState(false);
-
-  const activePhoto = currentCase.photos[currentCase.activePhotoType];
-  const beforeImageUrl = activePhoto?.url || '';
-
-  // Procedural / Generative Simulated Preview Image (High-fidelity ceramic post-op outcome)
-  const afterImageUrl = React.useMemo(() => {
-    // Generate simulated enhanced smile with brighter shade and harmonious contours
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 650" width="1000" height="650">
-      <defs>
-        <radialGradient id="faceGradSim" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stop-color="#EAC1A5"/>
-          <stop offset="100%" stop-color="#D7A98B"/>
-        </radialGradient>
-        <linearGradient id="ceramicShade" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stop-color="#FFFFFF"/>
-          <stop offset="25%" stop-color="#F9F8F3"/>
-          <stop offset="85%" stop-color="#F4F0E4"/>
-          <stop offset="100%" stop-color="#E0EEF5"/>
-        </linearGradient>
-      </defs>
-      <!-- Base Face (Exact 100% preservation) -->
-      <rect width="1000" height="650" fill="url(#faceGradSim)"/>
-      <path d="M 280 340 Q 500 260 720 340 Q 500 480 280 340 Z" fill="#1C090D"/>
-      
-      <!-- Recontoured Pink Stippled Gingiva -->
-      <path d="M 315 320 Q 500 270 685 320 Q 500 290 315 320 Z" fill="#E28492"/>
-
-      <!-- Simulated Maxillary Restorations (FDI 13 to 23) with Incisal Halo & Specular Highlights -->
-      <!-- 13 -->
-      <path d="M 320 325 C 330 305 355 305 365 325 C 370 365 355 408 340 412 C 330 408 315 365 320 325 Z" fill="url(#ceramicShade)" stroke="#C8C0AA" stroke-width="1.2"/>
-      <!-- 12 -->
-      <path d="M 370 320 C 380 300 405 300 415 320 C 420 365 410 408 395 410 C 380 408 365 365 370 320 Z" fill="url(#ceramicShade)" stroke="#C8C0AA" stroke-width="1.2"/>
-      <!-- 11 -->
-      <path d="M 420 310 C 435 285 475 285 495 310 C 500 370 495 422 460 424 C 425 422 415 370 420 310 Z" fill="url(#ceramicShade)" stroke="#C8C0AA" stroke-width="1.2"/>
-      <!-- Specular Highlight 11 -->
-      <path d="M 445 330 Q 455 370 445 400" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
-      <!-- 21 -->
-      <path d="M 505 310 C 525 285 565 285 580 310 C 585 370 575 422 540 424 C 505 422 500 370 505 310 Z" fill="url(#ceramicShade)" stroke="#C8C0AA" stroke-width="1.2"/>
-      <!-- Specular Highlight 21 -->
-      <path d="M 555 330 Q 545 370 555 400" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" opacity="0.6"/>
-      <!-- 22 -->
-      <path d="M 585 320 C 595 300 620 300 630 320 C 635 365 620 408 605 410 C 590 408 580 365 585 320 Z" fill="url(#ceramicShade)" stroke="#C8C0AA" stroke-width="1.2"/>
-      <!-- 23 -->
-      <path d="M 635 325 C 645 305 670 305 680 325 C 685 365 670 408 660 412 C 645 408 630 365 635 325 Z" fill="url(#ceramicShade)" stroke="#C8C0AA" stroke-width="1.2"/>
-
-      <!-- Preserved Lips (100% Identical) -->
-      <path d="M 260 340 C 350 450 650 450 740 340 C 660 495 340 495 260 340 Z" fill="#C25D6B"/>
-      <path d="M 260 340 C 370 280 470 295 500 305 C 530 295 630 280 740 340 C 640 260 360 260 260 340 Z" fill="#C25D6B"/>
-    </svg>`;
-    return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-  }, []);
-
-  if (!isOpen) return null;
-
+  onClose,
+  onChange,
+  onSave,
+  onReview,
+}: {
+  currentCase: Case;
+  onClose: () => void;
+  onChange: (c: Case) => void;
+  onSave: (caseId: string, s: SimulationJob) => void;
+  onReview: (
+    id: string,
+    status: SimulationJob["reviewStatus"],
+    notes: string,
+  ) => void;
+}) {
+  const photo = activePhoto(currentCase),
+    job = [...currentCase.simulations]
+      .reverse()
+      .find((s) => s.provenance.photoId === photo?.id),
+    [slider, setSlider] = useState(50),
+    [mask, setMask] = useState<MouthMask>({
+      left: 0.27,
+      top: 0.4,
+      right: 0.73,
+      bottom: 0.77,
+    }),
+    [maskReviewed, setMaskReviewed] = useState(false),
+    [savedMaskAvailable, setSavedMaskAvailable] = useState(false),
+    [maskLoading, setMaskLoading] = useState(!!job),
+    [imageReviewed, setImageReviewed] = useState(false),
+    [notes, setNotes] = useState(""),
+    [loading, setLoading] = useState(false),
+    [error, setError] = useState("");
+  const stale = job ? isStale(currentCase, job.provenance) : false,
+    validMask = mask.left < mask.right && mask.top < mask.bottom;
+  useEffect(() => {
+    let active = true;
+    setSavedMaskAvailable(false);
+    setMaskLoading(!!job);
+    setImageReviewed(false);
+    setMaskReviewed(false);
+    setNotes(job?.notes ?? "");
+    if (job)
+      void readMedia(job.maskKey)
+        .then(async (blob) => {
+          if (!blob) return;
+          const value = JSON.parse(await blob.text());
+          if (
+            value.shape !== "ellipse" ||
+            value.photoId !== photo?.id ||
+            value.reviewed !== true ||
+            ![value.left, value.top, value.right, value.bottom].every(
+              (v) =>
+                typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1,
+            ) ||
+            value.left >= value.right ||
+            value.top >= value.bottom
+          )
+            return;
+          if (active) {
+            setMask({
+              left: value.left,
+              top: value.top,
+              right: value.right,
+              bottom: value.bottom,
+            });
+            setSavedMaskAvailable(true);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (active) setMaskLoading(false);
+        });
+    return () => {
+      active = false;
+    };
+  }, [job?.id, photo?.id]);
+  async function generate() {
+    if (!photo?.url) return;
+    setLoading(true);
+    setError("");
+    const source = currentCase;
+    try {
+      const response = await requestAi(source, "simulation"),
+        blob = await compositeSimulation(
+          photo,
+          `data:${response.image.mimeType};base64,${response.image.data}`,
+          mask,
+        ),
+        mediaKey = await saveMedia(blob),
+        maskKey = await saveMedia(
+          new Blob(
+            [
+              JSON.stringify({
+                shape: "ellipse",
+                ...mask,
+                photoId: photo.id,
+                reviewed: true,
+              }),
+            ],
+            { type: "application/json" },
+          ),
+        );
+      onSave(source.id, {
+        id: uid(),
+        provenance: response.provenance,
+        mediaKey,
+        maskKey,
+        reviewStatus: "pending_review",
+        notes: "",
+        url: URL.createObjectURL(blob),
+      });
+      setImageReviewed(false);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setLoading(false);
+    }
+  }
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-in fade-in duration-150">
-      <div className="bg-clinical-surface border border-clinical-border w-full max-w-5xl max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-        
-        {/* Header */}
-        <div className="px-6 py-4 border-b border-clinical-border flex items-center justify-between bg-clinical-darkest/70">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-cyan-950 text-cyan-400 border border-cyan-800">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
-                <span>Photorealistic Smile Simulation</span>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800 font-semibold">
-                  Simulated Outcome
-                </span>
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Before / After Interactive Split-View Comparison
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-clinical-border transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-
-        {/* Modal Body */}
-        <div className="p-6 overflow-y-auto space-y-4">
-          
-          {/* Patient Consent Gating Check */}
-          {!currentCase.consentGranted && (
-            <div className="p-4 bg-amber-950/40 border border-amber-700/80 rounded-xl flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <Lock className="w-5 h-5 text-amber-400 shrink-0" />
-                <div className="text-xs text-amber-200">
-                  <strong className="block font-semibold text-amber-100">Patient Photographic Consent Required:</strong>
-                  Clinical simulation requires documented patient consent for AI digital smile processing.
+    <Dialog title="Simulated treatment preview" onClose={onClose} wide>
+      <div className="stack">
+        <ConsentPanel currentCase={currentCase} onChange={onChange} />
+        <Notice tone="warning">
+          Aesthetic simulation · requires dentist review. This image cannot
+          establish surgical measurements or guarantee a postoperative result.
+        </Notice>
+        {error && <Notice tone="error">{error}</Notice>}
+        {!photo?.url ? (
+          <Notice>
+            Add the original patient photograph, or restore its local backup,
+            before generating.
+          </Notice>
+        ) : (
+          <>
+            <details open={!job}>
+              <summary>
+                <strong>Review the mouth editing mask</strong>
+              </summary>
+              <div className="stack" style={{ marginTop: 14 }}>
+                <div className="mask-image">
+                  <img
+                    src={photo.url}
+                    alt="Patient original with proposed elliptical mouth mask"
+                  />
+                  <div
+                    className="mask-ellipse"
+                    style={{
+                      left: `${mask.left * 100}%`,
+                      top: `${mask.top * 100}%`,
+                      width: `${(mask.right - mask.left) * 100}%`,
+                      height: `${(mask.bottom - mask.top) * 100}%`,
+                    }}
+                  />
                 </div>
+                <div className="two-cols">
+                  {(["left", "top", "right", "bottom"] as const).map((key) => (
+                    <NumberField
+                      key={key}
+                      label={`Mask ${key}`}
+                      unit="%"
+                      value={Math.round(mask[key] * 100)}
+                      min={0}
+                      max={100}
+                      step={1}
+                      disabled={loading}
+                      onChange={(v) => {
+                        if (v !== null && v >= 0 && v <= 100) {
+                          setMask({ ...mask, [key]: v / 100 });
+                          setMaskReviewed(false);
+                        }
+                      }}
+                    />
+                  ))}
+                </div>
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={maskReviewed}
+                    disabled={!validMask || loading}
+                    onChange={(e) => setMaskReviewed(e.target.checked)}
+                  />
+                  <span>
+                    I reviewed this mask against the patient photo and the
+                    active design. Pixels outside it will be preserved.
+                  </span>
+                </label>
               </div>
-              <button
-                onClick={onGrantConsent}
-                className="shrink-0 px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white rounded-lg text-xs font-semibold shadow-sm"
-              >
-                Record Patient Consent
-              </button>
-            </div>
-          )}
-
-          {/* Interactive Before / After Split Slider Container */}
-          <div className="relative w-full aspect-[16/10] bg-clinical-darkest rounded-xl overflow-hidden border border-clinical-border select-none shadow-2xl">
-            
-            {/* After (Simulated) Image Layer */}
-            <img
-              src={afterImageUrl}
-              alt="Simulated Outcome"
-              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-            />
-
-            {/* Before (Original) Image Layer with CSS Clip-Path */}
-            <div
-              className="absolute inset-0 overflow-hidden pointer-events-none"
-              style={{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }}
+            </details>
+            <button
+              className="btn primary"
+              disabled={
+                loading ||
+                !hasConsent(currentCase) ||
+                !maskReviewed ||
+                !validMask ||
+                photo.isIllustration
+              }
+              onClick={() => void generate()}
             >
-              <img
-                src={beforeImageUrl}
-                alt="Original Smile"
-                className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-              />
-            </div>
-
-            {/* Split Slider Handle Bar */}
-            <div
-              className="absolute top-0 bottom-0 w-1 bg-cyan-400 shadow-xl cursor-ew-resize z-20 pointer-events-none"
-              style={{ left: `${sliderPos}%` }}
-            >
-              <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-clinical-darkest border-2 border-cyan-400 flex items-center justify-center shadow-lg text-cyan-300">
-                <SlidersHorizontal className="w-4 h-4" />
-              </div>
-            </div>
-
-            {/* Mouse / Touch Slider Drag Area */}
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={sliderPos}
-              onChange={(e) => setSliderPos(parseFloat(e.target.value))}
-              className="absolute inset-0 w-full h-full opacity-0 cursor-ew-resize z-30"
-            />
-
-            {/* Labels */}
-            <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-md text-xs font-mono font-bold text-slate-200 border border-white/10 z-10">
-              BEFORE (ORIGINAL)
-            </div>
-            <div className="absolute top-3 right-3 bg-cyan-950/80 backdrop-blur-md px-2.5 py-1 rounded-md text-xs font-mono font-bold text-cyan-300 border border-cyan-700/60 z-10">
-              AFTER (SIMULATION)
-            </div>
-
-            {/* Mandatory Regulatory Disclaimer Watermark */}
-            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md px-4 py-1.5 rounded-lg border border-red-500/40 text-[11px] font-mono text-red-300 font-semibold z-10 shadow-lg text-center whitespace-nowrap">
-              Simulated treatment outcome — Requires dentist review
-            </div>
-          </div>
-
-          {/* Dentist Review & Approval Controls */}
-          <div className="p-4 bg-clinical-darkest rounded-xl border border-clinical-border flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-2.5">
-              <ShieldCheck className="w-5 h-5 text-teal-400" />
-              <div>
-                <h4 className="text-xs font-bold text-slate-200">
-                  Dentist Clinical Review Status:
-                </h4>
-                <p className="text-[11px] text-slate-400">
-                  {reviewStatus === 'dentist_accepted' && 'Simulation accepted and validated by treating dentist.'}
-                  {reviewStatus === 'pending_review' && 'Pending clinician approval before presenting to patient.'}
-                  {reviewStatus === 'dentist_rejected' && 'Marked for design revision and tissue parameter re-assessment.'}
+              {loading ? (
+                <Loader2 className="spin" size={18} />
+              ) : (
+                <Sparkles size={18} />
+              )}{" "}
+              {loading
+                ? "Generating patient preview…"
+                : job
+                  ? "Generate a new preview"
+                  : "Generate patient preview"}
+            </button>
+            {photo.isIllustration && (
+              <Notice>
+                Replace the illustrated demo with a patient photo for Gemini
+                image generation.
+              </Notice>
+            )}
+            {job?.url && (
+              <>
+                {!maskLoading && !savedMaskAvailable && (
+                  <Notice tone="warning">
+                    The reviewed mouth mask is unavailable on this device.
+                    Restore a complete backup or generate a new preview before
+                    accepting.
+                  </Notice>
+                )}
+                <div className="comparison">
+                  <img
+                    src={job.url}
+                    alt="AI simulated smile requiring review"
+                  />
+                  <img
+                    src={photo.url}
+                    alt="Original smile"
+                    style={{ clipPath: `inset(0 ${100 - slider}% 0 0)` }}
+                  />
+                  <span className="comparison-label">Original</span>
+                  <span className="comparison-label after">Simulation</span>
+                  <div
+                    className="comparison-line"
+                    style={{ left: `${slider}%` }}
+                  />
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={slider}
+                    aria-label="Original versus simulated comparison"
+                    onChange={(e) => setSlider(Number(e.target.value))}
+                  />
+                </div>
+                <NumberField
+                  label="Original image revealed"
+                  unit="%"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={slider}
+                  onChange={(v) => {
+                    if (v !== null) setSlider(Math.min(100, Math.max(0, v)));
+                  }}
+                />
+                {stale && (
+                  <Notice tone="warning">
+                    This preview belongs to an earlier revision. Generate a new
+                    preview before accepting.
+                  </Notice>
+                )}
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={imageReviewed}
+                    onChange={(e) => setImageReviewed(e.target.checked)}
+                  />
+                  <span>
+                    I reviewed tooth count, orientation, shape, margins, shade,
+                    lower/posterior teeth and unresolved papilla/embrasure
+                    limitations.
+                  </span>
+                </label>
+                <label className="field">
+                  <span>Aesthetic review notes</span>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                  />
+                </label>
+                <div className="row">
+                  <button
+                    className="btn primary"
+                    disabled={stale || !imageReviewed || !savedMaskAvailable}
+                    onClick={() =>
+                      onReview(job.id, "aesthetic_accepted", notes)
+                    }
+                  >
+                    <CheckCircle2 size={16} />
+                    Accept aesthetic preview
+                  </button>
+                  <button
+                    className="btn"
+                    onClick={() => onReview(job.id, "rejected", notes)}
+                  >
+                    Reject preview
+                  </button>
+                  <button
+                    className="btn"
+                    onClick={() =>
+                      void exportSimulation(job.url!).catch((e) =>
+                        setError(errorText(e)),
+                      )
+                    }
+                  >
+                    <Download size={16} />
+                    Export image
+                  </button>
+                </div>
+                <span className="badge">
+                  {job.reviewStatus.replaceAll("_", " ")}
+                </span>
+                <p className="muted" style={{ fontSize: 12 }}>
+                  Aesthetic acceptance is separate from clinical plan approval.{" "}
+                  {job.provenance.model} ·{" "}
+                  {new Date(job.provenance.createdAt).toLocaleString()}
                 </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setReviewStatus('dentist_accepted')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-                  reviewStatus === 'dentist_accepted'
-                    ? 'bg-emerald-600 text-white shadow-md'
-                    : 'bg-clinical-surface text-slate-300 border border-clinical-border hover:border-emerald-600'
-                }`}
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Approve Simulation</span>
-              </button>
-
-              <button
-                onClick={() => setReviewStatus('dentist_rejected')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
-                  reviewStatus === 'dentist_rejected'
-                    ? 'bg-rose-700 text-white shadow-md'
-                    : 'bg-clinical-surface text-slate-300 border border-clinical-border hover:border-rose-600'
-                }`}
-              >
-                <AlertCircle className="w-3.5 h-3.5" />
-                <span>Request Adjustments</span>
-              </button>
-            </div>
-          </div>
-
-        </div>
-
+              </>
+            )}
+            {job?.missing && (
+              <Notice tone="warning">
+                The generated image is stored on another device. Restore a local
+                backup to view it.
+              </Notice>
+            )}
+          </>
+        )}
       </div>
-    </div>
+    </Dialog>
   );
-};
+}

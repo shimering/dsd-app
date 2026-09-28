@@ -1,154 +1,436 @@
-import React from 'react';
-import { Case, PhotoType } from '../../types';
-import { Camera, RotateCw, Check, Upload, Image as ImageIcon } from 'lucide-react';
-import { saveLocalPhoto } from '../../lib/storage';
-
-interface PhotosViewProps {
-  currentCase: Case;
-  onUpdatePhoto: (photoType: PhotoType, url: string, orientationDeg: number) => void;
-  onSelectActivePhoto: (photoType: PhotoType) => void;
+import { useRef, useState } from "react";
+import {
+  Camera,
+  Check,
+  ImagePlus,
+  Upload,
+  Video,
+  AlertCircle,
+} from "lucide-react";
+import { Case, PhotoAsset, PhotoType } from "../../types";
+import { defaultGuides } from "../../lib/geometry";
+import { now, selectPhoto, uid } from "../../lib/case-model";
+import { inspectMedia } from "../../lib/media";
+import { saveMedia } from "../../lib/storage";
+import { Notice, errorText } from "../ui";
+import { VideoFrameCapture } from "./VideoFrameCapture";
+export const PHOTO_SLOTS: {
+  type: PhotoType;
+  label: string;
+  instruction: string;
+  core: boolean;
+}[] = [
+  {
+    type: "maximum_smile",
+    label: "Maximum smile",
+    instruction:
+      "Frontal face, maximum natural smile, teeth in focus; keep the head level.",
+    core: true,
+  },
+  {
+    type: "rest",
+    label: "Frontal at rest",
+    instruction:
+      "Natural head position and relaxed lips; record incisor display at rest.",
+    core: true,
+  },
+  {
+    type: "social_smile",
+    label: "Social smile",
+    instruction:
+      "Frontal face with a comfortable posed smile; use the same camera position.",
+    core: true,
+  },
+  {
+    type: "profile_rest",
+    label: "Profile at rest",
+    instruction: "Standardized profile, relaxed lips; document patient side.",
+    core: true,
+  },
+  {
+    type: "profile_smile",
+    label: "Profile smile",
+    instruction: "Profile smile with the same head position as the rest view.",
+    core: true,
+  },
+  {
+    type: "retracted",
+    label: "Anterior retracted",
+    instruction:
+      "Separate the teeth to expose clinical crowns and gingival margins.",
+    core: true,
+  },
+  {
+    type: "twelve_oclock",
+    label: "12 o’clock view",
+    instruction:
+      "Supplementary view above the patient for smile and arch relationships.",
+    core: false,
+  },
+  {
+    type: "frontal_bite",
+    label: "Frontal bite",
+    instruction:
+      "Retracted frontal intercuspation; supplement clinical bite assessment.",
+    core: false,
+  },
+  {
+    type: "right_bite",
+    label: "Right buccal bite",
+    instruction: "Right buccal view in intercuspation; identify patient side.",
+    core: false,
+  },
+  {
+    type: "left_bite",
+    label: "Left buccal bite",
+    instruction: "Left buccal view in intercuspation; identify patient side.",
+    core: false,
+  },
+  {
+    type: "upper_occlusal",
+    label: "Upper occlusal",
+    instruction:
+      "Upper arch view with an appropriate mirror and controlled orientation.",
+    core: false,
+  },
+  {
+    type: "lower_occlusal",
+    label: "Lower occlusal",
+    instruction:
+      "Lower arch view with an appropriate mirror and controlled orientation.",
+    core: false,
+  },
+  {
+    type: "shade",
+    label: "Shade reference",
+    instruction:
+      "Use consistent lighting and a labelled shade tab or reference card.",
+    core: false,
+  },
+  {
+    type: "video",
+    label: "Rest · speech · smile video",
+    instruction:
+      "Record relaxed lips, speech and natural smile. Use an identified frame for design.",
+    core: false,
+  },
+];
+export function captureCompleteness(c: Case) {
+  const required =
+    c.capturePurpose === "preview"
+      ? ["maximum_smile"]
+      : PHOTO_SLOTS.filter(
+          (s) => s.core && !c.notIndicated.includes(s.type),
+        ).map((s) => s.type);
+  return {
+    total: required.length,
+    ready: required.filter((t) =>
+      c.photos.some(
+        (p) => p.type === t && !p.archived && !p.missing && !p.isIllustration,
+      ),
+    ).length,
+  };
 }
-
-export const PhotosView: React.FC<PhotosViewProps> = ({
+export function PhotosView({
   currentCase,
-  onUpdatePhoto,
-  onSelectActivePhoto
-}) => {
-  const photoSlots: { type: PhotoType; title: string; description: string }[] = [
-    {
-      type: 'smile',
-      title: 'Full Smile (Close-Up)',
-      description: 'Primary design photograph. Captures relaxed and maximum smile dynamics.'
-    },
-    {
-      type: 'frontal_face',
-      title: 'Frontal Full Face',
-      description: 'Assesses facial midline, bipupillary horizontal plane, and facial thirds.'
-    },
-    {
-      type: 'retracted',
-      title: 'Retracted Intraoral',
-      description: 'Displays gingival margins, CEJ location, and existing axial inclinations.'
-    }
-  ];
-
-  const handleFileUpload = async (type: PhotoType, e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  onChange,
+  onDesign,
+  onAddPhoto,
+}: {
+  currentCase: Case;
+  onChange: (c: Case) => void;
+  onDesign: () => void;
+  onAddPhoto: (caseId: string, p: PhotoAsset) => void;
+}) {
+  const [error, setError] = useState(""),
+    [busy, setBusy] = useState<PhotoType | null>(null),
+    [showExtra, setShowExtra] = useState(false);
+  async function upload(
+    file: File | undefined,
+    type: PhotoType,
+    videoSource?: PhotoAsset["videoSource"],
+  ) {
     if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const dataUrl = reader.result as string;
-      await saveLocalPhoto(currentCase.id, type, dataUrl);
-      onUpdatePhoto(type, dataUrl, 0);
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleRotate = (type: PhotoType) => {
-    const photo = currentCase.photos[type];
-    if (!photo) return;
-    const nextDeg = ((photo.orientationDeg || 0) + 90) % 360;
-    onUpdatePhoto(type, photo.url, nextDeg);
-  };
-
+    setError("");
+    setBusy(type);
+    try {
+      if (file.size > 100 * 1024 * 1024)
+        throw new Error("Use a photo or video under 100MB.");
+      if (!file.type.startsWith(type === "video" ? "video/" : "image/"))
+        throw new Error("Choose a supported photo or video file.");
+      const dimensions = await inspectMedia(file),
+        mediaKey = await saveMedia(file),
+        asset: PhotoAsset = {
+          id: uid(),
+          type,
+          mediaKey,
+          name: file.name,
+          ...dimensions,
+          mimeType: file.type,
+          orientationDeg: 0,
+          calibration: { isCalibrated: false },
+          guides: defaultGuides(dimensions.width, dimensions.height),
+          capturedAt: now(),
+          qualityReviewed: false,
+          filters: "unknown",
+          url: URL.createObjectURL(file),
+          videoSource,
+        };
+      onAddPhoto(currentCase.id, asset);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+  const progress = captureCompleteness(currentCase);
   return (
-    <div className="max-w-5xl mx-auto p-4 md:p-6 space-y-6">
-      
-      <div className="p-5 bg-clinical-surface rounded-2xl border border-clinical-border">
-        <h2 className="text-base font-bold text-slate-100 flex items-center gap-2">
-          <Camera className="w-5 h-5 text-cyan-400" />
-          <span>Patient Photographic Records</span>
-        </h2>
-        <p className="text-xs text-slate-400 mt-1">
-          Photographs are stored securely in local device storage. Original aspect ratio and uncompressed resolution are preserved.
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {photoSlots.map((slot) => {
-          const photo = currentCase.photos[slot.type];
-          const isActive = currentCase.activePhotoType === slot.type;
-
-          return (
-            <div
-              key={slot.type}
-              className={`p-4 bg-clinical-surface rounded-xl border flex flex-col justify-between transition-all ${
-                isActive
-                  ? 'border-cyan-500 ring-1 ring-cyan-500/40 shadow-xl'
-                  : 'border-clinical-border hover:border-slate-600'
-              }`}
-            >
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="font-bold text-xs text-slate-100">{slot.title}</h3>
-                  {isActive && (
-                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
-                      ACTIVE CANVAS
-                    </span>
-                  )}
+    <div className="page-scroll">
+      <div className="page-content stack">
+        <div className="page-heading">
+          <div>
+            <span className="eyebrow">01 / Patient records</span>
+            <h1>Capture the complete picture.</h1>
+            <p>
+              Keep originals on this device. Add the views needed for your
+              intended assessment.
+            </p>
+          </div>
+          <button className="btn primary" onClick={onDesign}>
+            Continue to design
+          </button>
+        </div>
+        <div className="panel content-card stack">
+          <div className="row spread">
+            <label className="field">
+              <span>Capture purpose</span>
+              <select
+                value={currentCase.capturePurpose}
+                onChange={(e) =>
+                  onChange({
+                    ...currentCase,
+                    capturePurpose: e.target.value as Case["capturePurpose"],
+                  })
+                }
+              >
+                <option value="preview">Initial aesthetic preview</option>
+                <option value="comprehensive">
+                  Comprehensive clinical assessment
+                </option>
+              </select>
+            </label>
+            <span className="badge">
+              {progress.ready} / {progress.total} baseline views available
+            </span>
+          </div>
+          <div className="progress-track">
+            <span
+              style={{ width: `${(progress.ready / progress.total) * 100}%` }}
+            />
+          </div>
+          <p className="muted" style={{ fontSize: 13 }}>
+            A photo checklist does not establish surgical suitability. Assess
+            clinical findings and indicated records separately.
+          </p>
+        </div>
+        {error && <Notice tone="error">{error}</Notice>}
+        <div className="capture-grid">
+          {PHOTO_SLOTS.filter((s) => s.core || showExtra).map((slot) => {
+            const photo = currentCase.photos.find(
+                (p) => p.type === slot.type && !p.archived,
+              ),
+              required =
+                currentCase.capturePurpose === "preview"
+                  ? slot.type === "maximum_smile"
+                  : slot.core,
+              notIndicated = currentCase.notIndicated.includes(slot.type);
+            return (
+              <div className="panel capture-card" key={slot.type}>
+                <div className="row spread">
+                  <h3>{slot.label}</h3>
+                  <span
+                    className={`badge ${photo && !photo.missing && !photo.isIllustration ? "success" : ""}`}
+                  >
+                    {notIndicated
+                      ? "Not indicated"
+                      : required
+                        ? "Baseline"
+                        : "Conditional"}
+                  </span>
                 </div>
-                <p className="text-[11px] text-slate-400 mb-3 min-h-[32px]">
-                  {slot.description}
-                </p>
-
-                {/* Photo Preview or Empty Slot */}
-                <div className="relative aspect-[4/3] bg-clinical-darkest rounded-lg border border-clinical-border overflow-hidden flex items-center justify-center group mb-3">
+                <p>{slot.instruction}</p>
+                <div className="capture-image">
                   {photo?.url ? (
-                    <img
-                      src={photo.url}
-                      alt={slot.title}
-                      className="w-full h-full object-contain"
-                      style={{ transform: `rotate(${photo.orientationDeg || 0}deg)` }}
-                    />
+                    slot.type === "video" ? (
+                      <video src={photo.url} controls playsInline />
+                    ) : (
+                      <img src={photo.url} alt={slot.label} />
+                    )
                   ) : (
-                    <div className="flex flex-col items-center gap-2 text-slate-500">
-                      <ImageIcon className="w-8 h-8 opacity-40" />
-                      <span className="text-xs font-mono">No Photo Uploaded</span>
+                    <div
+                      className="stack"
+                      style={{ alignItems: "center", gap: 8 }}
+                    >
+                      {slot.type === "video" ? (
+                        <Video size={28} />
+                      ) : (
+                        <Camera size={28} />
+                      )}
+                      <small>
+                        {photo?.missing
+                          ? "Media unavailable on this device"
+                          : "No local media yet"}
+                      </small>
                     </div>
                   )}
-
-                  {/* Rotate Button on hover */}
-                  {photo?.url && (
-                    <button
-                      onClick={() => handleRotate(slot.type)}
-                      className="absolute top-2 right-2 p-1.5 rounded-lg bg-black/70 hover:bg-black text-white text-xs backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="Rotate 90 degrees"
-                    >
-                      <RotateCw className="w-3.5 h-3.5" />
-                    </button>
-                  )}
                 </div>
-              </div>
-
-              {/* Bottom Actions */}
-              <div className="flex items-center gap-2 pt-2 border-t border-clinical-border">
-                <label className="flex-1 flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-lg bg-clinical-darkest hover:bg-clinical-border border border-clinical-border text-xs text-slate-200 cursor-pointer font-medium transition-all">
-                  <Upload className="w-3 h-3 text-cyan-400" />
-                  <span>{photo?.url ? 'Replace' : 'Upload'}</span>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png"
-                    onChange={(e) => handleFileUpload(slot.type, e)}
-                    className="hidden"
+                <div className="capture-actions">
+                  <label className="btn">
+                    <Upload size={16} />
+                    <span>
+                      {busy === slot.type
+                        ? "Importing…"
+                        : photo
+                          ? "Replace"
+                          : "Upload"}
+                    </span>
+                    <input
+                      className="sr-only"
+                      type="file"
+                      aria-label={`Upload ${slot.label}`}
+                      accept={slot.type === "video" ? "video/*" : "image/*"}
+                      disabled={busy !== null}
+                      onChange={(e) => {
+                        void upload(e.target.files?.[0], slot.type);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                  <label className="btn">
+                    <Camera size={16} />
+                    <span>Camera</span>
+                    <input
+                      className="sr-only"
+                      type="file"
+                      aria-label={`Capture ${slot.label} with camera`}
+                      accept={slot.type === "video" ? "video/*" : "image/*"}
+                      capture="user"
+                      disabled={busy !== null}
+                      onChange={(e) => {
+                        void upload(e.target.files?.[0], slot.type);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
+                </div>
+                {photo?.url && slot.type === "video" && (
+                  <VideoFrameCapture
+                    photo={photo}
+                    onFrame={(file, type, source) => upload(file, type, source)}
                   />
-                </label>
-
-                {photo?.url && !isActive && (
+                )}{" "}
+                {photo && slot.type !== "video" && (
                   <button
-                    onClick={() => onSelectActivePhoto(slot.type)}
-                    className="py-1.5 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium transition-all shadow-sm"
+                    className={`btn ${photo.id === currentCase.activePhotoId ? "subtle" : ""}`}
+                    onClick={() => {
+                      onChange(selectPhoto(currentCase, photo.id));
+                      onDesign();
+                    }}
                   >
-                    Select as Canvas
+                    {photo.id === currentCase.activePhotoId ? (
+                      <Check size={16} />
+                    ) : (
+                      <ImagePlus size={16} />
+                    )}
+                    Use for design
                   </button>
                 )}
+                {photo && (
+                  <>
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={photo.qualityReviewed}
+                        onChange={(e) =>
+                          onChange({
+                            ...currentCase,
+                            photos: currentCase.photos.map((p) =>
+                              p.id === photo.id
+                                ? { ...p, qualityReviewed: e.target.checked }
+                                : p,
+                            ),
+                          })
+                        }
+                      />
+                      <span>
+                        Reviewed focus, exposure, pose, landmark visibility and
+                        patient side.
+                      </span>
+                    </label>
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={photo.filters === "none"}
+                        onChange={(e) =>
+                          onChange({
+                            ...currentCase,
+                            photos: currentCase.photos.map((p) =>
+                              p.id === photo.id
+                                ? {
+                                    ...p,
+                                    filters: e.target.checked
+                                      ? "none"
+                                      : "unknown",
+                                  }
+                                : p,
+                            ),
+                          })
+                        }
+                      />
+                      <span>No beauty filters or geometric edits applied.</span>
+                    </label>
+                    {photo.isIllustration && (
+                      <span className="badge warning">
+                        Illustration · replace for patient use
+                      </span>
+                    )}
+                  </>
+                )}
+                {slot.type !== "maximum_smile" && (
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={notIndicated}
+                      onChange={(e) =>
+                        onChange({
+                          ...currentCase,
+                          notIndicated: e.target.checked
+                            ? [...currentCase.notIndicated, slot.type]
+                            : currentCase.notIndicated.filter(
+                                (t) => t !== slot.type,
+                              ),
+                        })
+                      }
+                    />
+                    <span>Not clinically indicated for this assessment</span>
+                  </label>
+                )}
               </div>
-
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
+        <button className="btn" onClick={() => setShowExtra(!showExtra)}>
+          {showExtra
+            ? "Hide conditional views"
+            : "Show bite, occlusal, shade and video records"}
+        </button>
+        <Notice>
+          Preserve consistent camera distance, natural head position and
+          lighting. Shade and dimensional estimates from photographs need
+          clinical confirmation. Radiographs or CBCT are collected only when
+          clinically indicated.
+        </Notice>
       </div>
-
     </div>
   );
-};
+}

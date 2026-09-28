@@ -1,83 +1,82 @@
-# Digital Smile Design (DSD) — Clinical Evaluation Prototype
+# Smile Studio — Digital Smile Design
 
-A private, modern web application for aesthetic dentists to upload patient photographs, calibrate millimeter measurements, design 2D smile architectures, evaluate periodontal biological clearance (EFP guidelines), preview photorealistic smile simulations, and generate printable clinical treatment plans.
+An English, dentist-led React workspace for upper-ten (FDI 15–25) 2D smile design. This release is a clinical evaluation prototype. The reference workflow and clinical limitations are documented in `docs/DSD_CLINICAL_RESEARCH.md`.
 
----
+## Run locally
 
-## 🌟 Key Features
-
-### 1. Multi-Device Responsive Workspace
-* **Desktop Workstation ($> 1200\text{px}$)**: 3-column layout with persistent zoom/pan canvas, visual guides panel, and real-time periodontal calculation inspector.
-* **iPad Landscape ($1024\text{px} - 1194\text{px}$)**: Touch-optimized design with Apple Pencil / finger padding ($\ge 44\text{px}$ hit areas), split canvas/drawer.
-* **Mobile Portrait ($< 768\text{px}$)**: Single-column canvas with swipeable bottom sheets to prevent overlapping controls.
-
-### 2. Smile-Design Canvas & Photographic Calibration
-* Calibrate photographs using a known dimension (e.g. 10 mm ruler or central incisor width). Without calibration, the app automatically switches to **proportional mode (%)** rather than millimeters.
-* Real-time visual guides: **Facial Midline** (glabella to philtrum), **Bipupillary Horizontal Plane**, **Smile Arc Curve** (lower lip border), and **Incisal Plane**.
-* 4 Morphopsychological 2D Tooth Forms: **Oval**, **Square**, **Tapered**, and **Rounded** for maxillary visible teeth (FDI 13, 12, 11, 21, 22, 23).
-* Fine millimeter adjustments for width, height, axial inclination, proposed gingival movement, and incisal extension.
-
-### 3. Deterministic Periodontal Engine (EFP Guidelines)
-* Hard-coded biological safety rules:
-  * **Supracrestal Tissue Attachment (STA)**: Enforces $\ge 3.0\text{ mm}$ between alveolar crest and proposed margin.
-  * **Keratinized Tissue Preservation**: Requires $\ge 2.0\text{ mm}$ (optimally $\ge 3.0\text{ mm}$) remaining attached gingiva.
-  * **Candidate Outcomes**: Simple Gingivectomy, Flap-based Crown Lengthening with Osseous Resection, or Periodontal Specialist Referral.
-  * Missing findings immediately trigger a **"Further Assessment Needed"** state.
-
-### 4. Gemini 3.8 Flash AI Integration
-* **3 Editable Aesthetic Suggestions**: Analyzes facial proportions, smile arc harmony, and lip line dynamics without claiming that face shape dictates tooth shape.
-* **Photorealistic Smile Simulation**: Interactive Before/After split comparison with mandatory regulatory watermark: *"Simulated treatment outcome — Requires dentist review"*.
-
-### 5. Private Local Storage & Supabase Backend
-* Patient high-resolution photos are stored locally on the device using browser **IndexedDB**, eliminating cloud photo storage costs and ensuring strict clinical confidentiality.
-* Structured clinical records and revisions synchronize with **Supabase (PostgreSQL with Row Level Security)**.
-
----
-
-## 🚀 Getting Started
-
-### 1. Install Dependencies
-```bash
-npm install
+```sh
+npm ci
+npm run dev -- --host 127.0.0.1
 ```
 
-### 2. Environment Variables
-Copy `.env.example` to `.env`:
-```bash
-cp .env.example .env
+Copy `.env.example` to `.env.local` and enter the DSD project's URL and **publishable** key. This workspace already has the supplied project's frontend configuration in the ignored `.env.local`. No Gemini or service-role key belongs in a `VITE_` variable.
+
+## GitHub and Cloudflare
+
+The frontend deployment targets the existing `dsd-app` Cloudflare Worker. Its native Git integration builds updates pushed to `main` in [shimering/dsd-app](https://github.com/shimering/dsd-app). Use `npm run build:cloudflare` as the build command and `npm run deploy:cloudflare` as the deploy command. The build validates public configuration, runs unit checks, and compiles the app. See [deployment configuration](docs/DEPLOYMENT.md) for the build variables, Supabase production origin and local-media transfer steps.
+
+## Workflow
+
+Capture → Assess → Design → Preview → Plan. Both themes support the full workflow at desktop, iPad landscape and phone portrait widths. System/Light/Dark and active patient preferences persist. Smaller screens use photo/tool drawers and an editing sheet with a full-screen option.
+
+- Guided original photo/video capture, optional video frame selection, capture completeness, quality review and per-photo scale/reference records.
+- Original-image geometry, alignment rotation, editable landmarks, Select/Pan, pinch zoom, magnifier, undo/redo, FDI selection, numeric editing and movement buttons. Browser zoom remains enabled.
+- Four original tooth forms, patient-specific editing and reusable presets. Calibrated image dimensions remain projected estimates, separate from measured clinical dimensions and proposed margin movements.
+- Six-site periodontal findings with unknown states, method, source, date and clinician confirmation. Facial/smile measurements have the same provenance fields.
+- Clinician-selected criteria drive conditional calculations. KTW is not attached gingiva. A clearance shortfall is not an ostectomy prescription, and proposed margin movement is not a gingivectomy quantity. No universal clinical thresholds are hard-coded.
+- Three editable AI alternatives, consultation history, separately reviewed aesthetic simulations and clinician-approved treatment drafts. Changes invalidate dependent results and clear clinical approval.
+- PNG blueprint/simulation export, treatment PDF and local backup/import. The labelled illustration is a demo; it cannot establish a scale or be sent as a patient photo.
+
+## Dedicated Supabase project
+
+Target project: `ievxqrnqeahljepcjhfp`. The database migration and authenticated `smile-ai` Edge Function are deployed to this dedicated project. Remote checks verified owner isolation, anonymous denial, allowed-origin preflight and JWT gating. No patient/test rows were retained.
+
+To configure the Gemini secret and deploy future changes using the CLI, sign into the account that owns this project:
+
+```sh
+npx supabase login
+npx supabase link --project-ref ievxqrnqeahljepcjhfp
+npx supabase db push # the initial migration is already applied
+npx supabase secrets set --env-file supabase/.env.production
+npx supabase functions deploy smile-ai --project-ref ievxqrnqeahljepcjhfp
 ```
-Fill in your credentials:
-```env
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
-VITE_GEMINI_API_KEY=your-gemini-api-key
+
+Copy `supabase/.env.example` to the **ignored** `supabase/.env.production`, enter the Google API key there, and set `DSD_ALLOWED_ORIGINS` to comma-separated app origins without trailing slashes. Use only origins controlled by your practice. Keep this file outside backups. Configure Supabase Auth's site URL and allowed redirects for your app. Confirm email/signup settings before creating clinician accounts.
+
+The migration creates `dsd_cases`, explicitly grants authenticated access and enforces owner-based RLS for SELECT/INSERT/UPDATE/DELETE. The JSON body holds structured cases, measurement provenance, revisions, presets, consent, consultation and output metadata; originals and generated bytes are excluded. Concurrent saves use a previous-timestamp check, retaining the local copy on conflict. There are no Storage buckets.
+
+`smile-ai` verifies the session, reads the case through RLS, checks ownership, current revision/media and consent, runs the same deterministic clinical calculations as the browser, validates provider output and returns provenance. Gemini credentials stay server-side. Quota/configuration/provider failures produce actionable messages; no substitute or older-model fallback is used.
+
+After adding `GEMINI_API_KEY` in Supabase's Edge Function secrets, sign in through **Account and local backup** and select **Check AI connection**. This authenticated check sends one fixed, nonclinical text prompt and separately checks image-model metadata. It does not send patient photos or clinical findings. Text readiness requires a real usable provider response; image availability does not verify image generation. Configuration, model-access and quota failures are shown separately.
+
+Text defaults to **`gemini-3.8-flash`** and requires a configured Gemini 3.5+ text model. Image generation separately defaults to **`gemini-3.1-flash-image`**. The Gemini app subscription does not configure API quota or credentials: check the Google API project's access and billing. See [Google's text model documentation](https://ai.google.dev/gemini-api/docs/generate-content/latest-model) and [image API documentation](https://ai.google.dev/gemini-api/docs/generate-content/image-generation).
+
+Simulation inputs and the design blueprint share a padded, supported frame. The app rejects incompatible output framing, removes the known padding and replaces only pixel centres inside the clinician-reviewed elliptical mask. Original decoded pixels outside the mask remain identical. Review actual tooth/face registration and clinical limitations before aesthetic acceptance. Simulation images cannot establish measurements or guarantee outcomes.
+
+## Local media and recovery
+
+IndexedDB holds originals, extracted video frames, reviewed masks, generated composites and a local structured copy scoped to the signed-in owner. localStorage holds small preferences and the Supabase session. Original pixels are re-encoded without EXIF for a consented AI request; the selected photo and clinical context are transmitted to Google even though there is no cloud media storage.
+
+Backups are limited to 150MB per file to bound browser import memory. Use **Export this patient** to make separate backups for a larger workspace.
+
+Signing in on another browser/device restores structured data but displays missing-media states. Restore a practice-controlled backup on that device. Imports create new case identifiers, revoke cloud consent and clear clinical approval. Legacy prototype records are migrated with unconfirmed findings, unknown CEJ sign/reference and uncalibrated photos. Clearing browser data can remove local media; export a backup first.
+
+Existing six-tooth cases upgrade to FDI 15–25 when loaded. The upgrade creates extended design revisions, preserves existing tooth geometry, photos and calibration, and adds blank premolar findings. Previous AI results and clinical approval require fresh review. The added tooth positions and forms are editable starting points, not detected anatomy or clinical measurements.
+
+## Verification
+
+```sh
+npm run build
+npm test
+npm run check:edge
+npx playwright install chromium firefox webkit
+npm run test:browser
+# Optional Firefox runtime check:
+npm run test:browser:firefox
 ```
-*(Note: The app is equipped with offline fallbacks and realistic preloaded clinical sample cases, so you can test it immediately even before entering API keys!)*
 
-### 3. Start Development Server
-```bash
-npm run dev
-```
+Unit checks exercise coordinate transforms, conditional clinical calculations, consent/revision gates, authenticated provider contracts and the actual SQL migration in a local Postgres runtime. Browser checks cover both themes at 320×568, 390×844, 430×932, 1024×768, 1180×820, 1366×1024, 1280×800, 1440×900 and 1920×1080. Provider contracts use explicit test mocks; successful mocks do not establish live Gemini integration.
 
----
+Chromium and WebKit verification passed. The optional Firefox executable could not launch on this Windows host because of an incorrect side-by-side runtime configuration; Firefox remains unverified.
 
-## ☁️ Automated GitHub $\rightarrow$ Cloudflare Pages Deployment
-
-This repository includes a GitHub Actions workflow (`.github/workflows/deploy.yml`) for continuous deployment:
-
-1. **Push to GitHub**:
-   ```bash
-   git init
-   git add .
-   git commit -m "Initial commit of Digital Smile Design evaluation prototype"
-   git branch -M main
-   git remote add origin https://github.com/<your-username>/<your-repo>.git
-   git push -u origin main
-   ```
-2. **Cloudflare Pages Setup**:
-   * Go to Cloudflare Dashboard $\rightarrow$ **Workers & Pages** $\rightarrow$ **Create Application** $\rightarrow$ **Pages** $\rightarrow$ **Connect to GitHub**.
-   * Framework preset: `Vite`
-   * Build command: `npm run build`
-   * Output directory: `dist`
-   * In **Environment Variables**, add `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, and `VITE_GEMINI_API_KEY`.
-3. Every subsequent `git push` to `main` automatically builds and deploys your website on Cloudflare's global edge network in under 60 seconds.
+The user has reported adding the server-side Gemini key. Live provider verification is pending clinician sign-in and the authenticated connection check. Real iPad Safari/Pencil and phone Safari/Chrome verification, live patient-specific AI workflows, and periodontal/restorative expert review remain separate release checks. `docs/RELEASE_VERIFICATION.md` records completed checks and these limits.

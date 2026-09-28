@@ -6,29 +6,39 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "build:cloudflare": "node scripts/check-cloudflare-env.mjs && npm test && npm run build",
+    "deploy:cloudflare": "wrangler deploy",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:browser": "playwright test --project=chromium --project=webkit",
+    "test:browser:firefox": "playwright test --project=firefox",
+    "check:edge": "deno check --config supabase/functions/smile-ai/deno.json supabase/functions/smile-ai/index.ts"
   },
   "dependencies": {
-    "@google/genai": "^2.24.0",
-    "@supabase/supabase-js": "^2.49.1",
-    "clsx": "^2.1.1",
-    "html2canvas": "^1.4.1",
+    "@supabase/supabase-js": "2.117.2",
     "idb-keyval": "^6.2.1",
-    "jspdf": "^2.5.2",
+    "jspdf": "4.2.1",
     "lucide-react": "^0.475.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "tailwind-merge": "^2.6.0"
+    "zod": "4.6.5"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@playwright/test": "1.63.0",
     "@types/node": "^22.13.4",
     "@types/react": "^18.3.18",
     "@types/react-dom": "^18.3.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
+    "deno": "2.5.6",
     "postcss": "^8.5.2",
+    "prettier": "3.6.2",
+    "supabase": "2.118.0",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3",
-    "vite": "^6.1.0"
+    "vite": "^6.1.0",
+    "vitest": "5.0.2",
+    "wrangler": "4.142.0"
   }
 }
