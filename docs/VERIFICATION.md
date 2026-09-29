@@ -6,7 +6,9 @@ The Measure stage now includes 69 named DSD photo-measurement recipes, view-spec
 
 All 33 unit/integration tests and 54 browser tests passed, including Chromium and desktop WebKit. Production configuration/build validation and edge type checks passed. Existing measurement, lip, tooth, lighting, export, recovery, and account isolation regressions pass. The new browser cases cover redraw/undo, draft switching, calibration, persistence, resting views, unavailable items, and small-screen curve entry. Browser pointer rounding is accommodated separately from exact geometry checks.
 
-The `smile-assist` source supports the new `assessment` operation. Automatic approval review rejected deployment to the existing Supabase project `ievxqrnqeahljepcjhfp` because the current request authorizes pushing to `main` but does not explicitly authorize that separate live-backend deployment. The remote function remains at version 3. The new Gemini checklist requires explicit deployment approval; manual DSD measurements work independently. No patient photograph was sent to Gemini during verification.
+The user approved the separate backend deployment on 29 September 2026. Supabase project `ievxqrnqeahljepcjhfp` now runs `smile-assist` version 4, status ACTIVE, with JWT verification enabled. The deployed seven source/configuration files match the tested source at commit `19001aa6f0350402925e40bad0fafc8b5a9feb0b`. The new `assessment` operation is deployed. Production-origin preflight returned 200 with the expected allowed origin; an unauthenticated POST returned 401. No patient photograph was sent to Gemini during verification. The existing `smile-ai` function remains at version 5.
+
+The source commit was pushed to `main`, and the hosted app was verified serving the tested `index-DnRywsCY.js` bundle. The deployment bundle SHA-256 is `365ff2ff5828d1b04343dfde04e3ad28d562d17e7e66e3049bd7e87d8d944281`.
 
 Clinical accuracy, authenticated live-provider quality, and physical iPad/Pencil checks remain acceptance requirements.
 
