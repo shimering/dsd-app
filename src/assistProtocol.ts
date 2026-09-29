@@ -57,7 +57,7 @@ function normalizedDsdPoint() {
     })
     .strict();
 }
-export const ASSIST_MODEL = 'gemini-3.8-flash',
+export const ASSIST_MODEL = 'gemini-3.5-flash',
   RENDER_MODEL = 'gemini-3.1-flash-image';
 export const normalizedPoint = z
   .object({

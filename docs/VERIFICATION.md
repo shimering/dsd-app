@@ -1,5 +1,13 @@
 # Rebuild verification — 28 September 2026
 
+## Gemini 3.5 assistance model — 29 September 2026
+
+The user selected Gemini 3.5 after seeing the provider model/request rejection. The shared frontend/backend assistance default is now `gemini-3.5-flash`; image rendering retains `gemini-3.1-flash-image`. Supabase `smile-assist` version 5 is ACTIVE, with JWT verification enabled. The retrieved seven deployed source/configuration files match the tested source. The only deployed source change is the assistance model default.
+
+All 34 unit/integration tests passed, including a request with no explicit model that verifies the backend selects 3.5. All 16 cloud-sync browser checks passed in Chromium and WebKit and assert that frontend assistance requests select 3.5. The production build/configuration and edge type checks passed. Production-origin preflight returned 200; an unauthenticated POST returned 401. The built frontend bundle is `index-DPykMV1w.js`.
+
+Automatic approval review rejected a proposed temporary nonce-protected diagnostic endpoint because invoking Gemini with the server key was outside the authorized model switch. That endpoint was not deployed. The regular authenticated function was deployed with only the model change. No patient photo was sent to Gemini during verification. Live availability with the configured Google key remains unverified.
+
 ## Gemini case-sync recovery — 29 September 2026
 
 The reported “This case already exists in the cloud. Load cloud cases before syncing.” error came from keeping cloud revisions only in memory. Refreshing the browser cleared that revision and the next AI request attempted a duplicate insert. Account-scoped revisions now persist in IndexedDB. Cases from earlier versions reconnect after an owner-filtered lookup when the structured records match, with comparison independent of JSON key order. Differing records and stale optimistic revisions open a version chooser that preserves both copies. Same-account authentication events retain the loaded workspace, and late responses after sign-out cannot enter the guest scope.

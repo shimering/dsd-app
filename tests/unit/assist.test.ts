@@ -2,6 +2,7 @@ import { it, expect } from 'vitest';
 import { createHandler } from '../../supabase/functions/smile-assist/handler';
 import { DEFAULT_LIGHTING, newPhoto, uid } from '../../src/domain';
 import { applicableDsd } from '../../src/dsdCatalog';
+import { ASSIST_MODEL } from '../../src/assistProtocol';
 const env = {
   get: (name: string) =>
     ({
@@ -15,7 +16,7 @@ const p = newPhoto('Test', 'local', 1200, 800, 'image/png'),
 const input = {
   ...source,
   operation: 'outline',
-  model: 'gemini-3.8-flash',
+  model: ASSIST_MODEL,
   image: { mimeType: 'image/jpeg', data: '/9j/AAAAAAAAAAAA' },
 };
 const response = (body: unknown, status = 200) =>
@@ -120,7 +121,7 @@ it('validates normalized geometry and rejects extra assumed scale fields', async
   const call = fake.requests.find((r) => r.url.includes('googleapis.com'))!,
     body = JSON.parse(String(call.init!.body));
   expect(body.store).toBe(false);
-  expect(body.model).toBe('gemini-3.8-flash');
+  expect(body.model).toBe('gemini-3.5-flash');
   expect(String(call.init!.body)).not.toContain('server-secret');
   expect(call.init!.headers).toMatchObject({
     'x-goog-api-key': 'server-secret',
@@ -159,6 +160,23 @@ it('accepts saved lighting settings in the reserved case without changing propos
   const result = await createHandler(env, fetcher)(request());
   expect(result.status).toBe(200);
   expect((await result.json()).result.points).toEqual(points);
+});
+it('defaults to Gemini 3.5 Flash when the client does not specify a model', async () => {
+  const fake = fakeFetch({
+    points: [
+      { x: 100, y: 100 },
+      { x: 900, y: 100 },
+      { x: 900, y: 800 },
+    ],
+  });
+  const { model: _model, ...withoutModel } = input;
+  const result = await createHandler(env, fake.fetcher)(request(withoutModel));
+  expect(result.status).toBe(200);
+  expect((await result.json()).model).toBe('gemini-3.5-flash');
+  const provider = fake.requests.find((r) => r.url.includes('googleapis.com'))!;
+  expect(JSON.parse(String(provider.init!.body)).model).toBe(
+    'gemini-3.5-flash',
+  );
 });
 it('rejects intersections and a photo edited while the provider was working', async () => {
   const crossed = fakeFetch({

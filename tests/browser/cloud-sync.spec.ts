@@ -50,8 +50,9 @@ async function cloudFixture(page: Page, cachedVersion?: number) {
         });
         return;
       }
-      if (url.pathname === '/functions/v1/smile-assist') {
-        const input = request.postDataJSON();
+    if (url.pathname === '/functions/v1/smile-assist') {
+      const input = request.postDataJSON();
+      expect(input.model).toBe('gemini-3.5-flash');
         const source = {
           workspaceId: input.workspaceId,
           photoId: input.photoId,
