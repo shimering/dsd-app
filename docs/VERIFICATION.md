@@ -39,3 +39,11 @@ On 28 September 2026 the user requested pushing the updates to GitHub and replac
 Supabase `smile-assist` version 2 now allows the existing production origin, with JWT verification still enabled. Its production-origin preflight passed remotely without transmitting a photo. A regression check was added: 14 unit/integration tests, edge type checks, production build, public configuration validation, and the Wrangler dry run passed. The frontend rendering is unchanged from the 32 passing browser tests above.
 
 The committed `.env.production` contains only the public Supabase URL and publishable key, allowing the Cloudflare build to retain the existing account integration without needing new dashboard variables. Server credentials and patient media remain excluded.
+
+## Tooth controls released — 29 September 2026
+
+The user approved deploying the tested tooth controls to the hosted app. Production branch `main` was advanced to source commit `de1a117f2d13f584c1ddfd7f98713e1606aa577d`. Cloudflare's existing Git integration completed build `b279dbbd-2583-4dc5-bafe-029b92c9be27` successfully and deployed Worker version `456c3a8d-b917-436e-a096-66cb341ab36e`. The hosted page was checked and serves the tested `index-D0mu_Fm4.js` bundle.
+
+This release adds two-finger tooth scaling/rotation, optional snapping, manual environmental lighting with Match photo, and corrected crown proportions with explicit repair for existing designs. The finger edit hint now describes tooth transforms correctly. The final release checks passed all 21 unit/integration cases, the production configuration guard/build, edge type checks, and all 14 tooth-control browser cases in Chromium and WebKit. The selected-tooth gesture regression explicitly enables finger edit mode and confirms that photo zoom remains at 100%.
+
+Supabase `smile-assist` version 3 was deployed before the frontend to accept the optional stored lighting field, with JWT verification enabled. Production-origin preflight returned 200; an unauthenticated POST returned 401. No patient photograph was transmitted. Physical iPad/Pencil verification and review on original patient photographs remain outstanding. Full usage and the earlier 46-case browser verification are recorded in [TEETH_CONTROLS.md](TEETH_CONTROLS.md).

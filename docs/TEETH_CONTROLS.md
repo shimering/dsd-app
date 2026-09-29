@@ -6,7 +6,7 @@
 - [x] Optional snapping for rotation and scale.
 - [x] Manual environment lighting and shadow controls, with Match photo.
 - [x] Correct overly elongated starting teeth and add proportion repair for existing designs.
-- [ ] Publish the frontend and shared AI function update.
+- [x] Publish the frontend and shared AI function update.
 - [ ] Verify on a physical iPad and original patient photographs.
 
 ## Rotate and scale
@@ -52,4 +52,6 @@ The official DSD documentation describes texture selection and adjustments to br
 - Build and edge type checks passed. Desktop, iPad landscape, and phone layouts were inspected without horizontal overflow using a fictional fixture.
 - Physical iPad Safari/Pencil and visual review on original patient photographs remain unverified.
 
-Frontend deployment is pending. The shared `src/domain.ts` schema now accepts optional design lighting. Redeploy `smile-assist` with this shared schema before releasing the frontend, because the existing deployed function validates the reserved stored photo strictly. No database migration is needed for the existing JSON case body. Old frontend builds cannot read the new optional field until updated.
+Released to [the hosted app](https://dsd-app.gazarxperia.workers.dev) on 29 September 2026 from production branch `main`, source commit `de1a117f2d13f584c1ddfd7f98713e1606aa577d`. Cloudflare build `b279dbbd-2583-4dc5-bafe-029b92c9be27` succeeded and deployed Worker version `456c3a8d-b917-436e-a096-66cb341ab36e`. The hosted page serves the tested `index-D0mu_Fm4.js` bundle. Refresh an already open tab to load this version.
+
+The shared `src/domain.ts` schema accepts optional design lighting. Supabase `smile-assist` version 3 was deployed first with JWT verification enabled; production-origin preflight returned 200 and an unauthenticated POST returned 401. No photograph was sent in those checks. No database migration was needed for the existing JSON case body. The final pre-release check reran all 21 unit/integration cases, the production build and edge type checks, and all 14 tooth-control browser cases across Chromium and WebKit, explicitly enabling finger edit mode for the selected-tooth pinch/twist test.

@@ -11,7 +11,7 @@ npm run dev
 
 Preview: http://127.0.0.1:5174. Choose a photo or open **Tooth library** to review the corrected crown assets. See [docs/WORKFLOW.md](docs/WORKFLOW.md) for the guided workflow and acceptance gates.
 
-The current manual editor has 21 passing unit/integration and 46 passing browser cases. The tooth gesture, proportion, and lighting update is described in [docs/TEETH_CONTROLS.md](docs/TEETH_CONTROLS.md); see [docs/VERIFICATION.md](docs/VERIFICATION.md) for the earlier tested scope, backend deployment, screenshots, and remaining acceptance work. The current public build is in `dist`; the earlier ZIP in `.preview/smile-studio-preview.zip` has not been refreshed for this update.
+The current manual editor has 21 passing unit/integration and 46 passing browser cases. The tooth gesture, proportion, and lighting update is live at [Smile Studio](https://dsd-app.gazarxperia.workers.dev) and described in [docs/TEETH_CONTROLS.md](docs/TEETH_CONTROLS.md); see [docs/VERIFICATION.md](docs/VERIFICATION.md) for tested scope, backend deployment, screenshots, and remaining acceptance work. Production releases must reach `main` to trigger Cloudflare; pushes to `rebuild-v2` alone do not publish the app. The current public build is in `dist`; the earlier ZIP in `.preview/smile-studio-preview.zip` has not been refreshed for this update.
 
 ```sh
 npm test
