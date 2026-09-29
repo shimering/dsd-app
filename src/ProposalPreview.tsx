@@ -5,7 +5,9 @@ import {
   alignmentSchema,
   renderResultSchema,
   type Proposal,
+  assessmentSchema,
 } from './assistProtocol';
+import { dsdDefinition } from './dsdCatalog';
 import { type Photo } from './domain';
 import { lipPath } from './geometry';
 export function ProposalPreview({
@@ -50,6 +52,26 @@ export function ProposalPreview({
     >
       <image href={image.src} width={photo.width} height={photo.height} />
       <g fill="#f5c482" stroke="#f5c482" strokeWidth={2 * scale}>
+        {proposal.operation === 'assessment' &&
+          assessmentSchema.parse(proposal.result).measurements.map((m) => {
+            const points = m.points.map(point);
+            return (
+              <g key={m.assessmentId}>
+                <polyline
+                  points={points.map((p) => `${p.x},${p.y}`).join(' ')}
+                  fill="none"
+                />
+                {points.map((p, i) => (
+                  <circle key={i} cx={p.x} cy={p.y} r={3 * scale} />
+                ))}
+                {label(
+                  points[0],
+                  dsdDefinition(m.assessmentId)!.label,
+                  m.assessmentId,
+                )}
+              </g>
+            );
+          })}
         {proposal.operation === 'outline' &&
           (() => {
             const points = outlineSchema

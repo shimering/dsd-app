@@ -1,6 +1,7 @@
 import { it, expect } from 'vitest';
 import { createHandler } from '../../supabase/functions/smile-assist/handler';
 import { DEFAULT_LIGHTING, newPhoto, uid } from '../../src/domain';
+import { applicableDsd } from '../../src/dsdCatalog';
 const env = {
   get: (name: string) =>
     ({
@@ -196,4 +197,105 @@ it('keeps authentication and provider failures actionable without leaking creden
     response({ error: 'token' }, 401),
   );
   expect((await broken(request())).status).toBe(401);
+});
+it('requests the full applicable DSD checklist with explicit unavailable anatomy and no inferred scale', async () => {
+  const result = {
+    measurements: [
+      {
+        assessmentId: 'width-11',
+        points: [
+          { x: 100, y: 100 },
+          { x: 200, y: 100 },
+        ],
+      },
+    ],
+    unavailable: applicableDsd('smile')
+      .filter((m) => m.id !== 'width-11')
+      .map((m) => ({
+        assessmentId: m.id,
+        reason: 'Not clearly visible in this fixture.',
+      })),
+  };
+  const fake = fakeFetch(result);
+  const r = await createHandler(
+    env,
+    fake.fetcher,
+  )(request({ ...input, operation: 'assessment' }));
+  expect(r.status).toBe(200);
+  expect((await r.json()).result).toEqual(result);
+  const call = fake.requests.find((r) => r.url.includes('googleapis.com'))!;
+  const body = JSON.parse(String(call.init!.body));
+  expect(body.store).toBe(false);
+  expect(String(call.init!.body)).toContain(
+    'resting lip positions from a smiling photo',
+  );
+  expect(String(call.init!.body)).toContain('lateral-step-12');
+  expect(String(call.init!.body)).toContain('Never infer millimeters');
+});
+it('rejects incomplete DSD checklists, wrong photo views, stale assessments, and assumed calibration', async () => {
+  const complete = {
+    measurements: [],
+    unavailable: applicableDsd('smile').map((m) => ({
+      assessmentId: m.id,
+      reason: 'Hidden',
+    })),
+  };
+  for (const result of [
+    { ...complete, unavailable: complete.unavailable.slice(1) },
+    {
+      ...complete,
+      unavailable: [
+        ...complete.unavailable.slice(1),
+        { assessmentId: 'rest-display-11', reason: 'Hidden' },
+      ],
+    },
+    { ...complete, scaleMm: 10 },
+  ]) {
+    const fake = fakeFetch(result);
+    expect(
+      (
+        await createHandler(
+          env,
+          fake.fetcher,
+        )(request({ ...input, operation: 'assessment' }))
+      ).status,
+    ).toBe(422);
+  }
+  const fake = fakeFetch(complete, 1);
+  expect(
+    (
+      await createHandler(
+        env,
+        fake.fetcher,
+      )(request({ ...input, operation: 'assessment' }))
+    ).status,
+  ).toBe(409);
+});
+it('uses a saved resting view without requesting smile-only anatomy', async () => {
+  const result = {
+    measurements: [],
+    unavailable: applicableDsd('rest').map((m) => ({
+      assessmentId: m.id,
+      reason: 'Hidden',
+    })),
+  };
+  const fake = fakeFetch(result);
+  const fetcher: typeof fetch = (url, init) =>
+    String(url).includes('/rpc/')
+      ? Promise.resolve(
+          response({ ...p, dsd: { view: 'rest', unavailable: [] } }),
+        )
+      : fake.fetcher(url, init);
+  const r = await createHandler(
+    env,
+    fetcher,
+  )(request({ ...input, operation: 'assessment' }));
+  expect(r.status).toBe(200);
+  const body = JSON.parse(
+    String(
+      fake.requests.find((r) => r.url.includes('googleapis.com'))!.init!.body,
+    ),
+  );
+  expect(body.input[0].text).toContain('rest-display-11');
+  expect(body.input[0].text).not.toContain('corridor-right');
 });

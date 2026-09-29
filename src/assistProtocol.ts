@@ -1,4 +1,62 @@
 import { z } from 'zod';
+import { dsdIdSchema, dsdUnavailableSchema } from './domain.ts';
+import {
+  DSD_MEASUREMENTS,
+  dsdDefinition,
+  dsdAllowsZero,
+} from './dsdCatalog.ts';
+export const assessmentSchema = z
+  .object({
+    measurements: z
+      .array(
+        z
+          .object({
+            assessmentId: dsdIdSchema,
+            points: z.array(normalizedDsdPoint()).min(2).max(40),
+          })
+          .strict(),
+      )
+      .max(DSD_MEASUREMENTS.length),
+    unavailable: z.array(dsdUnavailableSchema).max(DSD_MEASUREMENTS.length),
+  })
+  .strict()
+  .superRefine((v, c) => {
+    const ids = [...v.measurements, ...v.unavailable].map(
+      (m) => m.assessmentId,
+    );
+    if (new Set(ids).size !== ids.length)
+      c.addIssue({
+        code: 'custom',
+        message: 'Each DSD measurement must appear only once.',
+      });
+    for (const m of v.measurements) {
+      const def = dsdDefinition(m.assessmentId)!;
+      if (
+        (def.kind !== 'polyline' && m.points.length !== 2) ||
+        (def.kind === 'polyline' && m.points.length < 3) ||
+        (!dsdAllowsZero(m.assessmentId) &&
+          m.points
+            .slice(1)
+            .some(
+              (p, i) =>
+                Math.hypot(p.x - m.points[i].x, p.y - m.points[i].y) < 1,
+            ))
+      )
+        c.addIssue({
+          code: 'custom',
+          message:
+            'DSD endpoints must be distinct and match the measurement tool.',
+        });
+    }
+  });
+function normalizedDsdPoint() {
+  return z
+    .object({
+      x: z.number().finite().min(0).max(1000),
+      y: z.number().finite().min(0).max(1000),
+    })
+    .strict();
+}
 export const ASSIST_MODEL = 'gemini-3.8-flash',
   RENDER_MODEL = 'gemini-3.1-flash-image';
 export const normalizedPoint = z
@@ -76,7 +134,13 @@ export const proposalSchema = z
     source: sourceSchema,
     model: z.string().min(1).max(100),
     createdAt: z.string(),
-    operation: z.enum(['landmarks', 'outline', 'alignment', 'render']),
+    operation: z.enum([
+      'landmarks',
+      'assessment',
+      'outline',
+      'alignment',
+      'render',
+    ]),
     result: z.unknown(),
   })
   .strict();
@@ -95,6 +159,8 @@ export function validateProposal(
       'This proposal is outdated or belongs to another photo. Request a new suggestion.',
     );
   if (proposal.operation === 'landmarks') landmarkSchema.parse(proposal.result);
+  if (proposal.operation === 'assessment')
+    assessmentSchema.parse(proposal.result);
   if (proposal.operation === 'outline') outlineSchema.parse(proposal.result);
   if (proposal.operation === 'alignment')
     alignmentSchema.parse(proposal.result);

@@ -78,6 +78,10 @@ import {
 } from './assistProtocol';
 import { requestAssistance } from './ai';
 import { ProposalPreview } from './ProposalPreview';
+import { DsdPanel } from './DsdPanel';
+import { dsdDefinition } from './dsdCatalog';
+import { applyDsdSuggestion, dsdMeasurement, dsdState } from './dsd';
+import { assessmentSchema } from './assistProtocol';
 
 function useImage(key: string | undefined) {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
@@ -174,6 +178,9 @@ export default function App() {
     [knownLength, setKnownLength] = useState('10'),
     [cloudBusy, setCloudBusy] = useState(false),
     [proposal, setProposal] = useState<Proposal | null>(null),
+    [assessmentId, setAssessmentId] = useState<string | null>(null),
+    [selectedDsd, setSelectedDsd] = useState<string[]>([]),
+    [showAllDsd, setShowAllDsd] = useState(false),
     [aiBusy, setAiBusy] = useState(false),
     [consentDialog, setConsentDialog] = useState(false),
     [consentChecked, setConsentChecked] = useState(false),
@@ -314,6 +321,7 @@ export default function App() {
   useEffect(() => {
     setSelection(null);
     setProposal(null);
+    setAssessmentId(null);
     requestToken.current++;
     setTool(step === 'Lip outline' ? 'lip' : 'select');
   }, [photo?.id, step]);
@@ -383,6 +391,24 @@ export default function App() {
     setStep(s);
     setTool(s === 'Lip outline' ? 'lip' : 'select');
     setSelection(null);
+    setAssessmentId(null);
+  };
+  const chooseTool = (t: Tool) => {
+    setAssessmentId(null);
+    setTool(t);
+  };
+  const startDsd = (id: string, redraw = false) => {
+    if (!photo) return;
+    const def = dsdDefinition(id);
+    if (!def) return;
+    setAssessmentId(id);
+    const existing = dsdMeasurement(photo, id);
+    setSelection(
+      existing && !redraw
+        ? { kind: 'measurement', id: existing.id, point: 0 }
+        : null,
+    );
+    setTool(existing && !redraw ? 'select' : def.kind);
   };
   const addPhoto = async (file: File, recover = false) => {
     if (!workspace) throw new Error('Wait for local storage to load.');
@@ -609,7 +635,18 @@ export default function App() {
         operation === 'render' ? renderModel : assistModel,
         blueprint,
       );
-      if (requestToken.current === token) setProposal(result);
+      if (requestToken.current === token) {
+        setProposal(result);
+        if (result.operation === 'assessment')
+          setSelectedDsd(
+            assessmentSchema
+              .parse(result.result)
+              .measurements.filter(
+                (m) => !dsdMeasurement(photo, m.assessmentId),
+              )
+              .map((m) => m.assessmentId),
+          );
+      }
     } finally {
       setAiBusy(false);
     }
@@ -625,6 +662,18 @@ export default function App() {
       x: (p.x * photo.width) / 1000,
       y: (p.y * photo.height) / 1000,
     });
+    if (proposal.operation === 'assessment') {
+      edit(
+        applyDsdSuggestion(
+          photo,
+          assessmentSchema.parse(proposal.result),
+          selectedDsd,
+        ),
+      );
+      setAssessmentId(null);
+      setSelection(null);
+      setTool('select');
+    }
     if (proposal.operation === 'landmarks') {
       const parsed = landmarkSchema.parse(proposal.result);
       edit({
@@ -872,7 +921,9 @@ export default function App() {
               renderImage={renderImage}
               step={step}
               tool={tool}
-              onTool={setTool}
+              onTool={chooseTool}
+              assessmentId={assessmentId}
+              showAllDsd={showAllDsd}
               onChange={edit}
               selection={selection}
               onSelect={setSelection}
@@ -1082,7 +1133,7 @@ export default function App() {
           )}
           {step === 'Measure' && photo && (
             <>
-              <h2>Measure freely.</h2>
+              <h2>Assess tooth positioning.</h2>
               <p className="muted">
                 Choose a tool above the photo. Every point can be moved and
                 adjusted precisely.
@@ -1102,7 +1153,7 @@ export default function App() {
                   </small>
                 </div>
               </div>
-              <button className="full" onClick={() => setTool('calibrate')}>
+              <button className="full" onClick={() => chooseTool('calibrate')}>
                 {photo.calibration
                   ? 'Recalibrate photo'
                   : 'Calibrate this photo'}
@@ -1119,6 +1170,25 @@ export default function App() {
                 Millimeters are projected from a 2D photo. Confirm the reference
                 in the same plane as your measurement.
               </div>
+              <hr />
+              <DsdPanel
+                photo={photo}
+                assessmentId={assessmentId}
+                onStart={startDsd}
+                showAll={showAllDsd}
+                onShowAll={setShowAllDsd}
+                onAssist={() => guard(() => runAi('assessment'))}
+                aiBusy={aiBusy}
+                imageReady={!!image}
+                onChange={(next) => {
+                  if (dsdState(next).view !== dsdState(photo).view) {
+                    setAssessmentId(null);
+                    setSelection(null);
+                    setTool('select');
+                  }
+                  edit(next);
+                }}
+              />
               <hr />
               <div className="section-label">
                 MEASUREMENTS <span>{photo.measurements.length}</span>
@@ -1137,6 +1207,7 @@ export default function App() {
                           : ''
                       }
                       onClick={() => {
+                        setAssessmentId(m.assessmentId ?? null);
                         setSelection({
                           kind: 'measurement',
                           id: m.id,
@@ -1907,7 +1978,7 @@ export default function App() {
                   guard(() =>
                     runAi(
                       step === 'Measure'
-                        ? 'landmarks'
+                        ? 'assessment'
                         : step === 'Lip outline'
                           ? 'outline'
                           : step === 'Teeth'
@@ -1924,7 +1995,7 @@ export default function App() {
                     ? 'Request rendered preview'
                     : 'Suggest ' +
                       (step === 'Measure'
-                        ? 'measurement points'
+                        ? 'DSD measurements with Gemini'
                         : step === 'Lip outline'
                           ? 'lip points'
                           : 'tooth alignment')}
@@ -2332,6 +2403,49 @@ export default function App() {
               : 'Check the suggested coordinates before applying them. Measurements will be calculated locally from your calibration.'}
           </p>
           <div className="proposal-preview">
+            {proposal.operation === 'assessment' &&
+              photo &&
+              (() => {
+                const result = assessmentSchema.parse(proposal.result);
+                return (
+                  <div className="dsd-proposal-list">
+                    <p>
+                      Review visible endpoints. Existing measurements are kept.
+                      Unavailable items include a reason.
+                    </p>
+                    {result.measurements.map((m) => (
+                      <label className="check-row" key={m.assessmentId}>
+                        <input
+                          type="checkbox"
+                          checked={selectedDsd.includes(m.assessmentId)}
+                          disabled={!!dsdMeasurement(photo, m.assessmentId)}
+                          onChange={(e) =>
+                            setSelectedDsd(
+                              e.target.checked
+                                ? [...selectedDsd, m.assessmentId]
+                                : selectedDsd.filter(
+                                    (id) => id !== m.assessmentId,
+                                  ),
+                            )
+                          }
+                        />
+                        <span>
+                          {dsdDefinition(m.assessmentId)!.label}
+                          {dsdMeasurement(photo, m.assessmentId)
+                            ? ' · already measured'
+                            : ` · ${m.points.length} points`}
+                        </span>
+                      </label>
+                    ))}
+                    {result.unavailable.map((m) => (
+                      <p key={m.assessmentId}>
+                        <strong>{dsdDefinition(m.assessmentId)!.label}</strong>{' '}
+                        · {m.reason}
+                      </p>
+                    ))}
+                  </div>
+                );
+              })()}
             {proposal.operation === 'landmarks' &&
               landmarkSchema
                 .parse(proposal.result)
@@ -2349,7 +2463,21 @@ export default function App() {
             )}
             {photo && (
               <ProposalPreview
-                proposal={proposal}
+                proposal={
+                  proposal.operation === 'assessment'
+                    ? {
+                        ...proposal,
+                        result: {
+                          ...assessmentSchema.parse(proposal.result),
+                          measurements: assessmentSchema
+                            .parse(proposal.result)
+                            .measurements.filter((m) =>
+                              selectedDsd.includes(m.assessmentId),
+                            ),
+                        },
+                      }
+                    : proposal
+                }
                 photo={photo}
                 image={image}
               />

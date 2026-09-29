@@ -1,5 +1,15 @@
 # Rebuild verification — 28 September 2026
 
+## DSD measurement assessment — 29 September 2026
+
+The Measure stage now includes 69 named DSD photo-measurement recipes, view-specific checklists, alignment/proportion/symmetry results, unavailable-anatomy reasons, and individually reviewed Gemini suggestions. See [DSD_MEASUREMENTS.md](DSD_MEASUREMENTS.md).
+
+All 33 unit/integration tests and 54 browser tests passed, including Chromium and desktop WebKit. Production configuration/build validation and edge type checks passed. Existing measurement, lip, tooth, lighting, export, recovery, and account isolation regressions pass. The new browser cases cover redraw/undo, draft switching, calibration, persistence, resting views, unavailable items, and small-screen curve entry. Browser pointer rounding is accommodated separately from exact geometry checks.
+
+The `smile-assist` source supports the new `assessment` operation. Automatic approval review rejected deployment to the existing Supabase project `ievxqrnqeahljepcjhfp` because the current request authorizes pushing to `main` but does not explicitly authorize that separate live-backend deployment. The remote function remains at version 3. The new Gemini checklist requires explicit deployment approval; manual DSD measurements work independently. No patient photograph was sent to Gemini during verification.
+
+Clinical accuracy, authenticated live-provider quality, and physical iPad/Pencil checks remain acceptance requirements.
+
 The manual rebuild implements **Photos → Measure → Lip outline → Teeth → Compare**. The initial review checks below were completed on `rebuild-v2`; the user subsequently authorized replacing the previous GitHub version.
 
 ## Checks completed

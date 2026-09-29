@@ -1,4 +1,15 @@
 import { z } from 'zod';
+import { DSD_MEASUREMENTS, dsdDefinition } from './dsdCatalog.ts';
+
+export const dsdIdSchema = z.enum(
+  DSD_MEASUREMENTS.map((m) => m.id) as [string, ...string[]],
+);
+export const dsdUnavailableSchema = z
+  .object({
+    assessmentId: dsdIdSchema,
+    reason: z.string().min(1).max(240),
+  })
+  .strict();
 
 export const FDI = [15, 14, 13, 12, 11, 21, 22, 23, 24, 25] as const;
 export const FORMS = [
@@ -47,8 +58,21 @@ export const measurementSchema = z
     kind: z.enum(['distance', 'polyline', 'angle', 'guide', 'ink']),
     label: z.string().max(200),
     points: z.array(pointSchema).min(2).max(10000),
+    assessmentId: dsdIdSchema.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((m, c) => {
+    if (
+      m.assessmentId &&
+      (m.kind !== dsdDefinition(m.assessmentId)?.kind ||
+        (m.kind === 'polyline' ? m.points.length < 3 : m.points.length !== 2))
+    )
+      c.addIssue({
+        code: 'custom',
+        message:
+          'The DSD measurement must match its named tool and point count.',
+      });
+  });
 export type Measurement = z.infer<typeof measurementSchema>;
 export const toothSchema = z
   .object({
@@ -126,6 +150,16 @@ export const photoSchema = z
     revision: z.number().int().nonnegative(),
     calibration: calibrationSchema.nullable(),
     measurements: z.array(measurementSchema).max(1000),
+    dsd: z
+      .object({
+        view: z.enum(['smile', 'rest', 'retracted']),
+        unavailable: z.array(dsdUnavailableSchema).max(DSD_MEASUREMENTS.length),
+        smileArc: z
+          .enum(['unassessed', 'consonant', 'flat', 'reverse'])
+          .optional(),
+      })
+      .strict()
+      .optional(),
     lip: lipSchema,
     designs: z.array(designSchema).max(100),
     activeDesignId: z.string(),
@@ -140,7 +174,23 @@ export const photoSchema = z
       .strict()
       .nullable(),
   })
-  .strict();
+  .strict()
+  .superRefine((p, c) => {
+    const ids = p.measurements
+      .filter((m) => m.assessmentId)
+      .map((m) => m.assessmentId);
+    const unavailable = p.dsd?.unavailable.map((m) => m.assessmentId) ?? [];
+    if (
+      new Set(ids).size !== ids.length ||
+      new Set(unavailable).size !== unavailable.length ||
+      unavailable.some((id) => ids.includes(id))
+    )
+      c.addIssue({
+        code: 'custom',
+        message:
+          'DSD items must have unique measurement or unavailable records.',
+      });
+  });
 export type Photo = z.infer<typeof photoSchema>;
 export const workspaceSchema = z
   .object({
@@ -324,6 +374,14 @@ export function replaceDesign(photo: Photo, design: Design): Photo {
   };
 }
 export function assertPhotoGeometry(photo: Photo) {
+  const named = photo.measurements.filter((m) => m.assessmentId);
+  if (
+    new Set(named.map((m) => m.assessmentId)).size !== named.length ||
+    named.some((m) => m.kind !== dsdDefinition(m.assessmentId!)?.kind)
+  )
+    throw new Error(
+      'DSD measurements must have distinct identifiers and the correct tool.',
+    );
   const all = [
     ...photo.lip.points,
     ...(photo.calibration?.points ?? []),

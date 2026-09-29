@@ -25,7 +25,10 @@ import {
   type Point,
   type Tool,
   type Step,
+  type Measurement,
 } from './domain';
+import { dsdDefinition, dsdAllowsZero } from './dsdCatalog';
+import { saveDsdMeasurement } from './dsd';
 import {
   clamp,
   distance,
@@ -68,6 +71,8 @@ type Props = {
   onRedo: () => void;
   canUndo: boolean;
   canRedo: boolean;
+  assessmentId?: string | null;
+  showAllDsd?: boolean;
 };
 type Drag = {
   type: 'point' | 'tooth' | 'resize' | 'ink' | 'pan' | 'compare';
@@ -122,6 +127,21 @@ export function Editor(props: Props) {
   const current = preview ?? photo,
     photoRef = useRef(current);
   photoRef.current = current;
+  const measurementVisible = (m: Measurement) =>
+    !m.assessmentId ||
+    props.showAllDsd ||
+    m.assessmentId === props.assessmentId ||
+    (selection?.kind === 'measurement' && selection.id === m.id) ||
+    [
+      'facial-horizontal',
+      'facial-midline',
+      'dental-midline',
+      'incisal-plane',
+      'canine-plane',
+      'gingival-reference',
+    ].includes(m.assessmentId) ||
+    (['incisal-arc', 'lower-lip-arc'].includes(props.assessmentId ?? '') &&
+      ['incisal-arc', 'lower-lip-arc'].includes(m.assessmentId));
   const view: View = {
     ...size,
     photoWidth: photo.width,
@@ -181,7 +201,7 @@ export function Editor(props: Props) {
     pointers.current.clear();
     pen.current = null;
     setCursor(null);
-  }, [tool, step, photo.activeDesignId]);
+  }, [tool, step, photo.activeDesignId, props.assessmentId]);
   const cancel = () => {
     const original =
       gesture.current?.type === 'teeth'
@@ -256,7 +276,7 @@ export function Editor(props: Props) {
       ctx.stroke();
     };
     if (step === 'Measure') {
-      current.measurements.forEach((m) => {
+      current.measurements.filter(measurementVisible).forEach((m) => {
         const picked =
           selection?.kind === 'measurement' && selection.id === m.id;
         line(
@@ -326,6 +346,8 @@ export function Editor(props: Props) {
     cursor,
     selection,
     step,
+    props.assessmentId,
+    props.showAllDsd,
     tool,
     props.split,
     props.libraryReady,
@@ -378,11 +400,13 @@ export function Editor(props: Props) {
     };
     const c = photoRef.current;
     if (step === 'Measure') {
-      c.measurements.forEach((m) =>
-        m.points.forEach((point, i) =>
-          check(point, { kind: 'measurement', id: m.id, point: i }),
-        ),
-      );
+      c.measurements
+        .filter(measurementVisible)
+        .forEach((m) =>
+          m.points.forEach((point, i) =>
+            check(point, { kind: 'measurement', id: m.id, point: i }),
+          ),
+        );
       c.calibration?.points.forEach((point, i) =>
         check(point, { kind: 'calibration', point: i }),
       );
@@ -443,22 +467,34 @@ export function Editor(props: Props) {
   };
   const finish = () => {
     const pts = draftRef.current;
-    if (tool === 'polyline' && pts.length >= 2) {
-      onChange({
-        ...photo,
-        measurements: [
-          ...photo.measurements,
-          {
-            id: uid(),
-            kind: 'polyline',
-            label: 'Length ' + (photo.measurements.length + 1),
-            points: pts,
-          },
-        ],
+    if (tool === 'polyline' && pts.length >= (props.assessmentId ? 3 : 2)) {
+      addMeasurement({
+        id: uid(),
+        kind: 'polyline',
+        label: 'Length ' + (photo.measurements.length + 1),
+        points: pts,
       });
       setDraft([]);
       draftRef.current = [];
     }
+  };
+  const addMeasurement = (measurement: Measurement) => {
+    const def = props.assessmentId
+      ? dsdDefinition(props.assessmentId)
+      : undefined;
+    const m =
+      def && def.kind === measurement.kind
+        ? { ...measurement, assessmentId: def.id, label: def.label }
+        : measurement;
+    if (
+      m.assessmentId &&
+      !dsdAllowsZero(m.assessmentId) &&
+      m.points.slice(1).some((p, i) => distance(p, m.points[i]) < 1)
+    )
+      return;
+    onChange(saveDsdMeasurement(photo, m));
+    onSelect({ kind: 'measurement', id: m.id, point: 0 });
+    if (m.assessmentId) onTool('select');
   };
   const down = (e: React.PointerEvent) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
@@ -571,7 +607,8 @@ export function Editor(props: Props) {
     const raw = toImage(screen, viewRef.current);
     if (raw.x < 0 || raw.y < 0 || raw.x > photo.width || raw.y > photo.height)
       return;
-    const picked = hit(p);
+    // A guided redraw places new endpoints even over existing landmarks.
+    const picked = props.assessmentId && tool !== 'select' ? null : hit(p);
     if (picked) {
       let corner = -1;
       if (picked.kind === 'tooth' && !props.group) {
@@ -640,26 +677,19 @@ export function Editor(props: Props) {
       if (tool === 'calibrate') props.onCalibrate(next);
       else if (tool === 'distance' || tool === 'guide' || tool === 'angle') {
         const id = uid();
-        onChange({
-          ...photo,
-          measurements: [
-            ...photo.measurements,
-            {
-              id,
-              kind: tool,
-              label:
-                (tool === 'guide'
-                  ? 'Reference'
-                  : tool === 'angle'
-                    ? 'Angle'
-                    : 'Distance') +
-                ' ' +
-                (photo.measurements.length + 1),
-              points: next,
-            },
-          ],
+        addMeasurement({
+          id,
+          kind: tool,
+          label:
+            (tool === 'guide'
+              ? 'Reference'
+              : tool === 'angle'
+                ? 'Angle'
+                : 'Distance') +
+            ' ' +
+            (photo.measurements.length + 1),
+          points: next,
         });
-        onSelect({ kind: 'measurement', id, point: 0 });
       }
       setDraft([]);
       draftRef.current = [];
@@ -870,27 +900,29 @@ export function Editor(props: Props) {
     return () => el.removeEventListener('wheel', wheel);
   }, []);
   const hint =
-    step === 'Photos'
-      ? 'Original photo · two fingers to navigate'
-      : step === 'Lip outline'
-        ? 'Trace the inner upper border, then the lower border back to your first point'
-        : step === 'Teeth'
-          ? tool === 'pan'
-            ? 'Two fingers pan and zoom the photo'
-            : 'Select a tooth · pinch to scale and twist to rotate · Pan to navigate'
-          : step === 'Compare'
-            ? 'Drag the divider to compare the same framing'
-            : tool === 'calibrate'
-              ? 'Place two points across a known reference'
-              : tool === 'angle'
-                ? 'Place three points · the second is the vertex'
-                : tool === 'polyline'
-                  ? 'Place points, then finish the length'
-                  : tool === 'ink'
-                    ? 'Draw with your Pencil or mouse'
-                    : tool === 'select'
-                      ? 'Move a point, or edit its coordinates in the inspector'
-                      : 'Place two points on the original photo';
+    props.assessmentId && dsdDefinition(props.assessmentId)?.kind === tool
+      ? dsdDefinition(props.assessmentId)!.instruction
+      : step === 'Photos'
+        ? 'Original photo · two fingers to navigate'
+        : step === 'Lip outline'
+          ? 'Trace the inner upper border, then the lower border back to your first point'
+          : step === 'Teeth'
+            ? tool === 'pan'
+              ? 'Two fingers pan and zoom the photo'
+              : 'Select a tooth · pinch to scale and twist to rotate · Pan to navigate'
+            : step === 'Compare'
+              ? 'Drag the divider to compare the same framing'
+              : tool === 'calibrate'
+                ? 'Place two points across a known reference'
+                : tool === 'angle'
+                  ? 'Place three points · the second is the vertex'
+                  : tool === 'polyline'
+                    ? 'Place points, then finish the length'
+                    : tool === 'ink'
+                      ? 'Draw with your Pencil or mouse'
+                      : tool === 'select'
+                        ? 'Move a point, or edit its coordinates in the inspector'
+                        : 'Place two points on the original photo';
   return (
     <div className="editor-wrap">
       <div className="canvas-toolbar" aria-label="Canvas tools">
@@ -1031,7 +1063,7 @@ export function Editor(props: Props) {
             {tool === 'polyline' && (
               <button
                 className="primary"
-                disabled={draft.length < 2}
+                disabled={draft.length < (props.assessmentId ? 3 : 2)}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={finish}
               >
