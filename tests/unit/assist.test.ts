@@ -1,6 +1,6 @@
 import { it, expect } from 'vitest';
 import { createHandler } from '../../supabase/functions/smile-assist/handler';
-import { newPhoto, uid } from '../../src/domain';
+import { DEFAULT_LIGHTING, newPhoto, uid } from '../../src/domain';
 const env = {
   get: (name: string) =>
     ({
@@ -135,6 +135,29 @@ it('validates normalized geometry and rejects extra assumed scale fields', async
   expect((await createHandler(env, invalid.fetcher)(request())).status).toBe(
     422,
   );
+});
+it('accepts saved lighting settings in the reserved case without changing proposal geometry', async () => {
+  const points = [
+    { x: 100, y: 100 },
+    { x: 900, y: 100 },
+    { x: 900, y: 800 },
+    { x: 100, y: 800 },
+  ];
+  const fake = fakeFetch({ points });
+  const reserved = {
+    ...p,
+    designs: p.designs.map((d) => ({
+      ...d,
+      lighting: { ...DEFAULT_LIGHTING, lipShadow: 35, brightness: -10 },
+    })),
+  };
+  const fetcher: typeof fetch = (url, init) =>
+    String(url).includes('/rpc/')
+      ? Promise.resolve(response(reserved))
+      : fake.fetcher(url, init);
+  const result = await createHandler(env, fetcher)(request());
+  expect(result.status).toBe(200);
+  expect((await result.json()).result.points).toEqual(points);
 });
 it('rejects intersections and a photo edited while the provider was working', async () => {
   const crossed = fakeFetch({

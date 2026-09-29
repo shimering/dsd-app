@@ -69,11 +69,35 @@ export const toothSchema = z
   })
   .strict();
 export type Tooth = z.infer<typeof toothSchema>;
+export const lightingSchema = z
+  .object({
+    brightness: z.number().finite().min(-40).max(40),
+    warmth: z.number().finite().min(-40).max(40),
+    saturation: z.number().finite().min(-50).max(50),
+    highlights: z.number().finite().min(0).max(100),
+    lipShadow: z.number().finite().min(0).max(75),
+    shadowDepth: z.number().finite().min(10).max(80),
+    posteriorShadow: z.number().finite().min(0).max(75),
+    lightBalance: z.number().finite().min(-60).max(60),
+  })
+  .strict();
+export type Lighting = z.infer<typeof lightingSchema>;
+export const DEFAULT_LIGHTING: Lighting = {
+  brightness: 0,
+  warmth: 0,
+  saturation: 0,
+  highlights: 0,
+  lipShadow: 0,
+  shadowDepth: 35,
+  posteriorShadow: 0,
+  lightBalance: 0,
+};
 export const designSchema = z
   .object({
     id: z.string(),
     name: z.string().max(120),
     teeth: z.array(toothSchema).max(10),
+    lighting: lightingSchema.optional(),
     createdAt: z.string(),
   })
   .strict();
@@ -228,17 +252,35 @@ export function seededTeeth(photo: Photo): Tooth[] {
     sum = widths.reduce((a, b) => a + b, 0),
     span = (maxX - minX) * 0.94;
   const openingHeight = Math.max(4, maxY - minY);
-  const heights = [0.72, 0.77, 0.94, 0.87, 1, 1, 0.87, 0.94, 0.77, 0.72];
+  const centralHeight = ((span / sum) * 1.02) / 0.82;
+  // A deep opening includes oral space and lower teeth. Upper crown height
+  // comes from crown width, not the height of the entire mouth opening.
+  const midX = (minX + maxX) / 2;
+  const upperCrossings: number[] = [];
+  pts.forEach((p, i) => {
+    const q = pts[(i + 1) % pts.length];
+    if (
+      Math.abs(q.x - p.x) > 0.001 &&
+      midX >= Math.min(p.x, q.x) &&
+      midX <= Math.max(p.x, q.x)
+    )
+      upperCrossings.push(p.y + ((q.y - p.y) * (midX - p.x)) / (q.x - p.x));
+  });
+  const upperY = upperCrossings.length ? Math.min(...upperCrossings) : minY;
+  const centralEdge = Math.min(
+    maxY - openingHeight * 0.06,
+    upperY + centralHeight * 0.9,
+  );
+  const curveHeight = Math.min(openingHeight, centralHeight);
   const edgeOffsets = [0.23, 0.16, 0.04, 0.09, 0, 0, 0.09, 0.04, 0.16, 0.23];
   let x = minX + (maxX - minX - span) / 2;
   return FDI.map((fdi, index) => {
     const w = (span * widths[index]) / sum,
       cx = x + w / 2;
     x += w;
-    const height = openingHeight * 0.9 * heights[index];
+    const height = naturalCrownHeight({ fdi, width: w * 1.02 });
     // Position by the visible incisal edge / cusp, never by atlas cell padding.
-    const edge =
-      maxY - openingHeight * 0.06 - openingHeight * edgeOffsets[index];
+    const edge = centralEdge - curveHeight * edgeOffsets[index];
     const rotations = [7, 5, 3, 1, 0, 0, -1, -3, -5, -7];
     return {
       fdi,
@@ -254,6 +296,26 @@ export function seededTeeth(photo: Photo): Tooth[] {
       visible: true,
     };
   });
+}
+// Adjustable visual starting proportions, independent of calibration.
+export function naturalCrownHeight(t: Pick<Tooth, 'fdi' | 'width'>) {
+  const ratio =
+    ({ 1: 0.82, 2: 0.75, 3: 0.72, 4: 0.74, 5: 0.74 } as Record<number, number>)[
+      t.fdi % 10
+    ] ?? 0.8;
+  return Math.max(1, Math.min(100000, t.width / ratio));
+}
+export function restoreCrownProportions(t: Tooth): Tooth {
+  const height = naturalCrownHeight(t);
+  const shift = (height - t.height) / 2,
+    angle = (t.rotation * Math.PI) / 180;
+  // Preserve the cervical midpoint under the upper lip when shortening a tooth.
+  return {
+    ...t,
+    height,
+    x: t.x - shift * Math.sin(angle),
+    y: t.y + shift * Math.cos(angle),
+  };
 }
 export function replaceDesign(photo: Photo, design: Design): Photo {
   return {

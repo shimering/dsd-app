@@ -34,12 +34,13 @@ import {
   lipProblem,
   measurementValue,
   pointInPolygon,
+  pinchTeeth,
   toImage,
   toScreen,
   toothCorners,
   type View,
 } from './geometry';
-import { applyView, drawMockup, drawTooth } from './render';
+import { applyView, drawMockup, drawTeeth } from './render';
 
 export type Selection =
   | { kind: 'measurement'; id: string; point: number }
@@ -59,6 +60,7 @@ type Props = {
   onCalibrate: (p: Point[]) => void;
   fingerEdit: boolean;
   group: boolean;
+  snapping: boolean;
   libraryReady: boolean;
   split: number;
   onSplit: (n: number) => void;
@@ -78,6 +80,22 @@ type Drag = {
   corner?: number;
   split?: number;
 };
+type Gesture = {
+  ids: [number, number];
+  start: View;
+  anchor: Point;
+  distance: number;
+} & (
+  | { type: 'view' }
+  | {
+      type: 'teeth';
+      photo: Photo;
+      latest: Photo;
+      fdi: number | null;
+      points: [Point, Point];
+      snapping: boolean;
+    }
+);
 const measureTools: [Tool, string, typeof Ruler][] = [
   ['distance', 'Distance', Ruler],
   ['polyline', 'Multi-point length', Waypoints],
@@ -125,9 +143,7 @@ export function Editor(props: Props) {
     tap = useRef<{ id: number; point: Point; screen: Point } | null>(null),
     pointers = useRef(new Map<number, { point: Point; type: string }>()),
     pen = useRef<number | null>(null),
-    gesture = useRef<{ start: View; anchor: Point; distance: number } | null>(
-      null,
-    );
+    gesture = useRef<Gesture | null>(null);
   const setView = (v: View) => {
     viewRef.current = v;
     setZoom(
@@ -152,20 +168,33 @@ export function Editor(props: Props) {
     drag.current = null;
     pointers.current.clear();
     gesture.current = null;
+    tap.current = null;
+    pen.current = null;
   }, [photo.id]);
   useEffect(() => {
     setDraft([]);
     draftRef.current = [];
     setPreview(null);
     drag.current = null;
-  }, [tool, step]);
+    gesture.current = null;
+    tap.current = null;
+    pointers.current.clear();
+    pen.current = null;
+    setCursor(null);
+  }, [tool, step, photo.activeDesignId]);
   const cancel = () => {
+    const original =
+      gesture.current?.type === 'teeth'
+        ? gesture.current.photo
+        : drag.current?.photo;
     drag.current = null;
     tap.current = null;
     setPreview(null);
     setDraft([]);
     draftRef.current = [];
     gesture.current = null;
+    if (original) photoRef.current = original;
+    setCursor(null);
   };
   useEffect(() => {
     const listener = (e: KeyboardEvent) => {
@@ -199,8 +228,7 @@ export function Editor(props: Props) {
     if (step === 'Teeth' || step === 'Compare') {
       if (current.lip.closed && !lipProblem(current.lip))
         drawMockup(ctx, current, props.renderImage ?? undefined);
-      else if (step === 'Teeth')
-        activeDesign(current)?.teeth.forEach((t) => drawTooth(ctx, t));
+      else if (step === 'Teeth') drawTeeth(ctx, current);
     }
     ctx.restore();
     if (step === 'Compare') return;
@@ -434,31 +462,86 @@ export function Editor(props: Props) {
   };
   const down = (e: React.PointerEvent) => {
     if (e.button !== 0 && e.pointerType === 'mouse') return;
-    e.currentTarget.setPointerCapture(e.pointerId);
     const screen = local(e);
     if (e.pointerType === 'touch' && pen.current !== null) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
     pointers.current.set(e.pointerId, { point: screen, type: e.pointerType });
     if (e.pointerType === 'pen') pen.current = e.pointerId;
-    const touches = [...pointers.current.values()].filter(
-      (p) => p.type === 'touch',
+    if (gesture.current) return;
+    const touches = [...pointers.current.entries()].filter(
+      ([, p]) => p.type === 'touch',
     );
     if (touches.length === 2) {
+      const base = drag.current?.photo ?? photo;
       drag.current = null;
       tap.current = null;
       setPreview(null);
+      setCursor(null);
+      photoRef.current = base;
       const center = {
-        x: (touches[0].point.x + touches[1].point.x) / 2,
-        y: (touches[0].point.y + touches[1].point.y) / 2,
+        x: (touches[0][1].point.x + touches[1][1].point.x) / 2,
+        y: (touches[0][1].point.y + touches[1][1].point.y) / 2,
       };
+      const start = viewRef.current;
+      const points: [Point, Point] = [
+        toImage(touches[0][1].point, start),
+        toImage(touches[1][1].point, start),
+      ];
+      const picked = hit(points[0]);
+      const target =
+        selection?.kind === 'tooth'
+          ? selection
+          : picked?.kind === 'tooth'
+            ? picked
+            : hit(toImage(center, start));
+      const common = {
+        ids: [touches[0][0], touches[1][0]] as [number, number],
+        start,
+        anchor: toImage(center, start),
+        distance: Math.max(
+          1,
+          distance(touches[0][1].point, touches[1][1].point),
+        ),
+      };
+      if (
+        step === 'Teeth' &&
+        tool === 'select' &&
+        activeDesign(base).teeth.some((t) => t.visible) &&
+        (props.group || target?.kind === 'tooth')
+      ) {
+        gesture.current = {
+          ...common,
+          type: 'teeth',
+          photo: base,
+          latest: base,
+          fdi: props.group
+            ? null
+            : target!.kind === 'tooth'
+              ? target!.fdi
+              : null,
+          points,
+          snapping: props.snapping,
+        };
+        if (target?.kind === 'tooth') onSelect(target);
+        return;
+      }
       gesture.current = {
-        start: viewRef.current,
-        anchor: toImage(center, viewRef.current),
-        distance: Math.max(1, distance(touches[0].point, touches[1].point)),
+        ...common,
+        type: 'view',
       };
       return;
     }
     const p = bounded(toImage(screen, viewRef.current));
     const canEdit = e.pointerType !== 'touch' || props.fingerEdit;
+    if (
+      !canEdit &&
+      step === 'Teeth' &&
+      tool === 'select' &&
+      (props.group || selection?.kind === 'tooth' || hit(p)?.kind === 'tooth')
+    ) {
+      tap.current = { id: e.pointerId, point: p, screen };
+      return;
+    }
     if (step === 'Compare' && tool !== 'pan') {
       drag.current = {
         type: 'compare',
@@ -586,15 +669,37 @@ export function Editor(props: Props) {
     const screen = local(e);
     const tracked = pointers.current.get(e.pointerId);
     if (tracked) tracked.point = screen;
-    const touches = [...pointers.current.values()].filter(
-      (p) => p.type === 'touch',
-    );
-    if (gesture.current && touches.length >= 2) {
-      const g = gesture.current,
-        center = {
-          x: (touches[0].point.x + touches[1].point.x) / 2,
-          y: (touches[0].point.y + touches[1].point.y) / 2,
-        };
+    const g = gesture.current;
+    if (g) {
+      if (!g.ids.includes(e.pointerId)) return;
+      const touches = g.ids.map((id) => pointers.current.get(id));
+      if (!touches[0] || !touches[1]) return;
+      if (g.type === 'teeth') {
+        const design = activeDesign(g.photo);
+        const next = replaceDesign(g.photo, {
+          ...design,
+          teeth: pinchTeeth(
+            design.teeth,
+            g.fdi,
+            g.points,
+            [
+              toImage(touches[0].point, g.start),
+              toImage(touches[1].point, g.start),
+            ],
+            g.snapping,
+            Math.min(100000, photo.width * 2),
+            Math.min(100000, photo.height * 2),
+          ),
+        });
+        g.latest = next;
+        setPreview(next);
+        photoRef.current = next;
+        return;
+      }
+      const center = {
+        x: (touches[0].point.x + touches[1].point.x) / 2,
+        y: (touches[0].point.y + touches[1].point.y) / 2,
+      };
       const scale = clamp(
           (g.start.scale * distance(touches[0].point, touches[1].point)) /
             g.distance,
@@ -687,15 +792,25 @@ export function Editor(props: Props) {
     pointers.current.delete(e.pointerId);
     if (pen.current === e.pointerId) pen.current = null;
     if (gesture.current) {
-      if (pointers.current.size < 2) gesture.current = null;
+      const g = gesture.current;
+      if (!g.ids.includes(e.pointerId)) return;
+      gesture.current = null;
+      if (g.type === 'teeth') {
+        if (!cancelled && JSON.stringify(g.latest) !== JSON.stringify(g.photo))
+          onChange(g.latest);
+        photoRef.current = cancelled ? g.photo : g.latest;
+      }
       drag.current = null;
       tap.current = null;
       setPreview(null);
+      setCursor(null);
       return;
     }
     if (tap.current?.id === e.pointerId) {
       if (!cancelled && distance(tap.current.screen, local(e)) < 10)
-        placePoint(tap.current.point);
+        if (step === 'Teeth' && tool === 'select')
+          onSelect(hit(tap.current.point));
+        else placePoint(tap.current.point);
       tap.current = null;
     }
     const d = drag.current;
@@ -760,7 +875,9 @@ export function Editor(props: Props) {
       : step === 'Lip outline'
         ? 'Trace the inner upper border, then the lower border back to your first point'
         : step === 'Teeth'
-          ? 'Select a tooth to adjust it · align your central incisors first'
+          ? tool === 'pan'
+            ? 'Two fingers pan and zoom the photo'
+            : 'Select a tooth · pinch to scale and twist to rotate · Pan to navigate'
           : step === 'Compare'
             ? 'Drag the divider to compare the same framing'
             : tool === 'calibrate'
@@ -861,7 +978,11 @@ export function Editor(props: Props) {
         onPointerUp={(e) => up(e)}
         onPointerCancel={(e) => up(e, true)}
         onLostPointerCapture={(e) => {
-          if (drag.current?.pointerId === e.pointerId) up(e, true);
+          if (
+            drag.current?.pointerId === e.pointerId ||
+            gesture.current?.ids.includes(e.pointerId)
+          )
+            up(e, true);
         }}
         data-testid="canvas-surface"
       >

@@ -31,6 +31,7 @@ import {
   FORMS,
   TEXTURES,
   SHADES,
+  DEFAULT_LIGHTING,
   uid,
   now,
   newWorkspace,
@@ -38,6 +39,7 @@ import {
   activeDesign,
   replaceDesign,
   seededTeeth,
+  restoreCrownProportions,
   updatePhoto,
   type Workspace,
   type Photo,
@@ -45,6 +47,7 @@ import {
   type Tooth,
   type Tool,
   type Step,
+  type Lighting,
 } from './domain';
 import { lipProblem, clamp, measurementValue, distance } from './geometry';
 import { loadToothLibrary } from './assets';
@@ -62,6 +65,7 @@ import {
   inspectImage,
 } from './storage';
 import { exportImage, drawMockup } from './render';
+import { matchPhotoLighting } from './lighting';
 import { supabase, fetchCloud, syncCloud } from './cloud';
 import {
   ASSIST_MODEL,
@@ -151,6 +155,9 @@ export default function App() {
     [selection, setSelection] = useState<Selection>(null),
     [fingerEdit, setFingerEdit] = useState(false),
     [group, setGroup] = useState(false),
+    [snapping, setSnapping] = useState(
+      () => localStorage.getItem('smile-snapping') === 'true',
+    ),
     [split, setSplit] = useState(0.5),
     [libraryReady, setLibraryReady] = useState(false),
     [review, setReview] = useState(false),
@@ -197,6 +204,7 @@ export default function App() {
     selection?.kind === 'tooth'
       ? design?.teeth.find((t) => t.fdi === selection.fdi)
       : undefined;
+  const lighting = design?.lighting ?? DEFAULT_LIGHTING;
   const selectedMeasurement =
     selection?.kind === 'measurement'
       ? photo?.measurements.find((m) => m.id === selection.id)
@@ -213,6 +221,9 @@ export default function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('smile-theme', theme);
   }, [theme]);
+  useEffect(() => {
+    localStorage.setItem('smile-snapping', String(snapping));
+  }, [snapping]);
   useEffect(() => {
     loadToothLibrary()
       .then(() => setLibraryReady(true))
@@ -344,6 +355,7 @@ export default function App() {
     casesRef.current = casesRef.current.map((c) =>
       c.id === next.id ? next : c,
     );
+    setSaveStatus('Saving on this device…');
     setCases(casesRef.current);
   };
   const edit = (next: Photo) => {
@@ -488,6 +500,30 @@ export default function App() {
         ),
       }),
     );
+  };
+  const editLighting = (values: Partial<Lighting>) => {
+    if (photo && design)
+      edit(
+        replaceDesign(
+          { ...photo, render: null },
+          {
+            ...design,
+            lighting: { ...lighting, ...values },
+          },
+        ),
+      );
+  };
+  const matchLighting = () => {
+    if (!photo || !image || !design) return;
+    setError('');
+    try {
+      editLighting(matchPhotoLighting(image, photo));
+      setNotice(
+        'Lighting matched to the original teeth. Refine the controls to suit the photo.',
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   };
   const scaleArch = (factor: number) => {
     if (!photo || !design?.teeth.length) return;
@@ -843,6 +879,7 @@ export default function App() {
               onCalibrate={setCalibration}
               fingerEdit={fingerEdit}
               group={group}
+              snapping={snapping}
               libraryReady={libraryReady}
               split={split}
               onSplit={setSplit}
@@ -1283,6 +1320,12 @@ export default function App() {
                       replaceDesign(photo, {
                         ...design,
                         teeth: seededTeeth(photo),
+                        lighting: {
+                          ...DEFAULT_LIGHTING,
+                          highlights: 25,
+                          lipShadow: 20,
+                          posteriorShadow: 15,
+                        },
                       }),
                     )
                   }
@@ -1314,6 +1357,18 @@ export default function App() {
                     />
                     Move and style the whole smile
                   </label>
+                  <label className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={snapping}
+                      onChange={(e) => setSnapping(e.target.checked)}
+                    />
+                    Apply snapping
+                  </label>
+                  <div className="note">
+                    Pinch to scale and twist to rotate. Snapping attracts nearby
+                    5° angles and 5% scale steps. Choose Pan to move the photo.
+                  </div>
                   <div className="section-label">
                     {tooth && !group ? `TOOTH ${tooth.fdi}` : 'WHOLE SMILE'}
                   </div>
@@ -1364,6 +1419,30 @@ export default function App() {
                   </div>
                   <div className="note">
                     Shade names express a visual preference in this simulation.
+                  </div>
+                  <button
+                    className="full"
+                    onClick={() =>
+                      edit(
+                        replaceDesign(photo, {
+                          ...design,
+                          teeth: design.teeth.map((t) =>
+                            !tooth || group || t.fdi === tooth.fdi
+                              ? restoreCrownProportions(t)
+                              : t,
+                          ),
+                        }),
+                      )
+                    }
+                  >
+                    Restore natural proportions
+                  </button>
+                  <div className="note">
+                    Shorten elongated crowns using their width. Applies to
+                    {tooth && !group
+                      ? ` tooth ${tooth.fdi}`
+                      : ' the whole smile'}
+                    . Fine-tune width and height for the individual case.
                   </div>
                   {group ? (
                     <div className="button-row">
@@ -1431,6 +1510,69 @@ export default function App() {
                       </>
                     )
                   )}
+                  <details className="lighting-panel" open>
+                    <summary>Lighting &amp; shadows</summary>
+                    <p className="muted">
+                      Adjust the whole smile to suit the photograph.
+                    </p>
+                    <div className="button-row">
+                      <button
+                        onClick={matchLighting}
+                        disabled={
+                          !image ||
+                          !libraryReady ||
+                          !photo.lip.closed ||
+                          !!lipProblem(photo.lip)
+                        }
+                      >
+                        <Sun size={16} /> Match photo
+                      </button>
+                      <button onClick={() => editLighting(DEFAULT_LIGHTING)}>
+                        Reset lighting
+                      </button>
+                    </div>
+                    {(
+                      [
+                        ['brightness', 'Brightness', -40, 40],
+                        ['warmth', 'Warmth', -40, 40],
+                        ['saturation', 'Saturation', -50, 50],
+                        ['highlights', 'Soften highlights', 0, 100],
+                        ['lipShadow', 'Upper lip shadow', 0, 75],
+                        ['shadowDepth', 'Shadow reach', 10, 80],
+                        ['posteriorShadow', 'Posterior shadow', 0, 75],
+                        [
+                          'lightBalance',
+                          'Light balance · left / right',
+                          -60,
+                          60,
+                        ],
+                      ] as const
+                    ).map(([key, label, min, max]) => (
+                      <label className="field lighting-field" key={key}>
+                        <span>
+                          {label}
+                          <span className="lighting-value" aria-hidden="true">
+                            {lighting[key]}
+                          </span>
+                        </span>
+                        <input
+                          type="range"
+                          aria-label={label}
+                          min={min}
+                          max={max}
+                          step="1"
+                          value={lighting[key]}
+                          onChange={(e) =>
+                            editLighting({ [key]: Number(e.target.value) })
+                          }
+                        />
+                      </label>
+                    ))}
+                    <div className="note">
+                      Match photo gives starting values from the original teeth.
+                      Refine them with the sliders.
+                    </div>
+                  </details>
                   <hr />
                   <label className="field">
                     Alternative design

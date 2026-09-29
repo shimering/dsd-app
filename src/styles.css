@@ -761,6 +761,28 @@ hr {
   grid-template-columns: repeat(5, 1fr);
   gap: 5px;
 }
+.lighting-panel {
+  border-top: 1px solid var(--border);
+  margin-top: 20px;
+  padding-top: 16px;
+}
+.lighting-panel summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 650;
+}
+.lighting-panel .button-row {
+  margin-bottom: 18px;
+}
+.lighting-field > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+.lighting-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 .shade-options button {
   padding: 7px 1px;
   font-size: 9px;

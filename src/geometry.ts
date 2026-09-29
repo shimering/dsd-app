@@ -175,6 +175,67 @@ export function toothCorners(t: Tooth): Point[] {
     y: t.y + x * Math.sin(a) + y * Math.cos(a),
   }));
 }
+export const snapNear = (value: number, step: number, tolerance: number) => {
+  const snapped = Math.round(value / step) * step;
+  return Math.abs(value - snapped) <= tolerance ? snapped : value;
+};
+
+// A similarity transform keeps the tooth under the fingers, including when the
+// photo is rotated. Passing null transforms the arch as one rigid group.
+export function pinchTeeth(
+  teeth: Tooth[],
+  fdi: number | null,
+  start: [Point, Point],
+  current: [Point, Point],
+  snapping: boolean,
+  maxWidth: number,
+  maxHeight: number,
+): Tooth[] {
+  const targets = teeth.filter((t) => fdi === null || t.fdi === fdi);
+  const initialDistance = distance(start[0], start[1]);
+  if (!targets.length || initialDistance < 0.001) return teeth;
+  let scale = distance(current[0], current[1]) / initialDistance;
+  let rotation =
+    ((Math.atan2(current[1].y - current[0].y, current[1].x - current[0].x) -
+      Math.atan2(start[1].y - start[0].y, start[1].x - start[0].x)) *
+      180) /
+    Math.PI;
+  rotation = ((rotation + 540) % 360) - 180;
+  if (snapping) {
+    scale = snapNear(scale, 0.05, 0.0125);
+    const base = fdi === null ? 0 : targets[0].rotation;
+    rotation = snapNear(base + rotation, 5, 1.5) - base;
+  }
+  scale = clamp(
+    scale,
+    Math.max(...targets.map((t) => Math.max(1 / t.width, 1 / t.height))),
+    Math.min(
+      ...targets.map((t) => Math.min(maxWidth / t.width, maxHeight / t.height)),
+    ),
+  );
+  const origin = {
+    x: (start[0].x + start[1].x) / 2,
+    y: (start[0].y + start[1].y) / 2,
+  };
+  const destination = {
+    x: (current[0].x + current[1].x) / 2,
+    y: (current[0].y + current[1].y) / 2,
+  };
+  const a = (rotation * Math.PI) / 180;
+  return teeth.map((t) => {
+    if (fdi !== null && t.fdi !== fdi) return t;
+    const x = t.x - origin.x,
+      y = t.y - origin.y;
+    return {
+      ...t,
+      x: destination.x + scale * (x * Math.cos(a) - y * Math.sin(a)),
+      y: destination.y + scale * (x * Math.sin(a) + y * Math.cos(a)),
+      width: t.width * scale,
+      height: t.height * scale,
+      rotation: t.rotation + rotation,
+    };
+  });
+}
 export function pointInPolygon(point: Point, p: Point[]) {
   let inside = false;
   for (let i = 0, j = p.length - 1; i < p.length; j = i++)

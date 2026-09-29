@@ -10,7 +10,11 @@ Build branch: `rebuild-v2`. On 28 September 2026 the user authorized replacing t
 
 Open **Tooth library** to inspect the corrected ten-tooth arch before applying it to a photo. Initial placement is a provisional template, not an anatomical detection.
 
-Pencil/mouse edits; two fingers pan and zoom. Enable finger edit mode for single-finger placement and editing. The magnifier shows the original photo around a selected location. Desktop browser automation does not establish physical iPad/Pencil support.
+In **Teeth**, select a tooth, then pinch with two fingers to scale and twist to rotate. Enable **Move and style the whole smile** to transform the arch together. **Apply snapping** attracts nearby 5° angles and 5% scale steps; turn it off for continuous movement. Use **Pan** to navigate the photo with two fingers. The other stages retain two-finger pan/zoom. Enable finger edit mode for single-finger placement and editing. The magnifier shows the original photo around a selected location. Desktop browser automation does not establish physical iPad/Pencil support.
+
+**Lighting & shadows** adjusts the whole active design: brightness, warmth, saturation, highlight softness, upper-lip shadow and its reach, posterior shadow, and left/right lighting balance. **Match photo** estimates starting values from the original enamel inside the confirmed lip opening; refine the sliders manually. Settings are saved with alternatives, presets, and backups and appear in simulation/comparison exports. See [TEETH_CONTROLS.md](TEETH_CONTROLS.md) for use and release notes.
+
+Starting tooth heights are based on crown width, so a deep lip opening cannot elongate the teeth. **Restore natural proportions** repairs the selected tooth or whole smile while keeping its cervical midpoint in place. The proportions remain adjustable per case and are preserved during pinch scaling.
 
 ## Accounts, backup, and AI
 
