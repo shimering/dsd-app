@@ -1871,8 +1871,9 @@ export default function App() {
                 Finger edit mode
               </label>
               <div className="note">
-                Pencil or mouse edits points. Two fingers pan and zoom. Finger
-                editing is optional.
+                {step === 'Teeth'
+                  ? 'Finger edit mode enables single-finger tooth edits. Select a tooth or the whole smile, then pinch to scale and twist to rotate. Choose Pan to zoom the photo.'
+                  : 'Pencil or mouse edits points. Two fingers pan and zoom. Finger editing is optional.'}
               </div>
             </>
           )}

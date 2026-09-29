@@ -155,10 +155,11 @@ async function gesture(
     cy + radius * scale * Math.sin(a),
   );
 }
-test('two fingers rotate and scale the selected tooth, preserve photo zoom, and undo in one step', async ({
+test('finger edit mode allows two fingers to rotate and scale the selected tooth, preserve photo zoom, and undo in one step', async ({
   page,
 }) => {
   await setup(page);
+  await page.getByLabel('Finger edit mode', { exact: true }).check();
   const before = await savedPhoto(page),
     original = before.designs[0].teeth;
   await gesture(page, 1.2, 23.7, 'pointerup', true);
