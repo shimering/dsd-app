@@ -1,12 +1,22 @@
 # Rebuild verification — 28 September 2026
 
+## Gemini 3.5 request compatibility — 29 September 2026
+
+The user approved temporary synthetic diagnostics after the initial automatic approval rejection. The protected diagnostic used a random nonce, a ten-minute expiry, fixed synthetic input, server-held credentials, and enabled JWT verification for normal requests. It was removed after each check. No patient photo or real case was transmitted.
+
+Live requests confirmed that the configured account can reach `gemini-3.5-flash`. Provider-enforced schemas returned HTTP 400 on both Interactions and `generateContent`, including a text-only request, while `generateContent` JSON mode without provider-enforced schemas returned a completed, locally valid synthetic lip outline. The exact reason for Google's schema rejection is not established. Assistance now uses the accepted JSON-mode format and supplies the expected schema in the prompt. Server checks still enforce schema, coordinates, valid outlines, complete view-specific DSD identifiers, tooth geometry, ownership, consent, and source revision. Image rendering retains Interactions with `store:false`.
+
+The live DSD assessment requests previously encountered Google HTTP 503 overload responses and timeouts due to unbounded dynamic thinking and raw JSON checklist payload size. Assessment prompts now format the view-specific checklist concisely and configure `thinkingConfig: { thinkingLevel: 'low' }` for Gemini 3 series models to keep reasoning fast, prevent token exhaustion, and eliminate timeouts while maintaining structured output quality. The backend reports temporary provider overload separately from request-format and unavailable-model errors, with no automatic retry or silent model fallback.
+
+All 42 unit/integration tests, the production build, and edge type checks passed. Regression checks cover Gemini JSON-mode transport, explicit model selection, thought exclusion, incomplete/safety-stopped results, retained geometry/view validation, thinking level configuration, provider-error messages without secret exposure, and unchanged image-render transport. The frontend bundle remains `index-DPykMV1w.js`.
+
 ## Gemini 3.5 assistance model — 29 September 2026
 
 The user selected Gemini 3.5 after seeing the provider model/request rejection. The shared frontend/backend assistance default is now `gemini-3.5-flash`; image rendering retains `gemini-3.1-flash-image`. Supabase `smile-assist` version 5 is ACTIVE, with JWT verification enabled. The retrieved seven deployed source/configuration files match the tested source. The only deployed source change is the assistance model default.
 
 All 34 unit/integration tests passed, including a request with no explicit model that verifies the backend selects 3.5. All 16 cloud-sync browser checks passed in Chromium and WebKit and assert that frontend assistance requests select 3.5. The production build/configuration and edge type checks passed. Production-origin preflight returned 200; an unauthenticated POST returned 401. The built frontend bundle is `index-DPykMV1w.js`.
 
-Automatic approval review rejected a proposed temporary nonce-protected diagnostic endpoint because invoking Gemini with the server key was outside the authorized model switch. That endpoint was not deployed. The regular authenticated function was deployed with only the model change. No patient photo was sent to Gemini during verification. Live availability with the configured Google key remains unverified.
+Automatic approval review initially rejected a proposed temporary nonce-protected diagnostic endpoint because invoking Gemini with the server key was outside the authorized model switch. At this stage, that endpoint was not deployed. The regular authenticated function was deployed with only the model change. No patient photo was sent to Gemini during verification. The subsequent user-approved compatibility checks are documented above.
 
 ## Gemini case-sync recovery — 29 September 2026
 

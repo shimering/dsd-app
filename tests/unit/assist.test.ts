@@ -1,6 +1,6 @@
 import { it, expect } from 'vitest';
 import { createHandler } from '../../supabase/functions/smile-assist/handler';
-import { DEFAULT_LIGHTING, newPhoto, uid } from '../../src/domain';
+import { DEFAULT_LIGHTING, newPhoto, seededTeeth, uid } from '../../src/domain';
 import { applicableDsd } from '../../src/dsdCatalog';
 import { ASSIST_MODEL } from '../../src/assistProtocol';
 const env = {
@@ -34,11 +34,10 @@ const request = (value: unknown = input, token = true) =>
     body: JSON.stringify(value),
   });
 const output = (result: unknown) => ({
-  status: 'completed',
-  steps: [
+  candidates: [
     {
-      type: 'model_output',
-      content: [{ type: 'text', text: JSON.stringify(result) }],
+      finishReason: 'STOP',
+      content: { parts: [{ text: JSON.stringify(result) }] },
     },
   ],
 });
@@ -120,8 +119,15 @@ it('validates normalized geometry and rejects extra assumed scale fields', async
   expect(proposal.result.points).toHaveLength(4);
   const call = fake.requests.find((r) => r.url.includes('googleapis.com'))!,
     body = JSON.parse(String(call.init!.body));
-  expect(body.store).toBe(false);
-  expect(body.model).toBe('gemini-3.5-flash');
+  expect(call.url).toBe(
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent',
+  );
+  expect(body.generationConfig).toEqual({
+    responseMimeType: 'application/json',
+    thinkingConfig: { thinkingLevel: 'low' },
+  });
+  expect(body.contents[0].parts[1].inlineData).toEqual(input.image);
+  expect(body.contents[0].parts[0].text).toContain('JSON Schema:');
   expect(String(call.init!.body)).not.toContain('server-secret');
   expect(call.init!.headers).toMatchObject({
     'x-goog-api-key': 'server-secret',
@@ -174,8 +180,8 @@ it('defaults to Gemini 3.5 Flash when the client does not specify a model', asyn
   expect(result.status).toBe(200);
   expect((await result.json()).model).toBe('gemini-3.5-flash');
   const provider = fake.requests.find((r) => r.url.includes('googleapis.com'))!;
-  expect(JSON.parse(String(provider.init!.body)).model).toBe(
-    'gemini-3.5-flash',
+  expect(provider.url).toBe(
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent',
   );
 });
 it('rejects intersections and a photo edited while the provider was working', async () => {
@@ -243,7 +249,10 @@ it('requests the full applicable DSD checklist with explicit unavailable anatomy
   expect((await r.json()).result).toEqual(result);
   const call = fake.requests.find((r) => r.url.includes('googleapis.com'))!;
   const body = JSON.parse(String(call.init!.body));
-  expect(body.store).toBe(false);
+  expect(body.generationConfig).toEqual({
+    responseMimeType: 'application/json',
+    thinkingConfig: { thinkingLevel: 'low' },
+  });
   expect(String(call.init!.body)).toContain(
     'resting lip positions from a smiling photo',
   );
@@ -314,6 +323,187 @@ it('uses a saved resting view without requesting smile-only anatomy', async () =
       fake.requests.find((r) => r.url.includes('googleapis.com'))!.init!.body,
     ),
   );
-  expect(body.input[0].text).toContain('rest-display-11');
-  expect(body.input[0].text).not.toContain('corridor-right');
+  expect(body.contents[0].parts[0].text).toContain('rest-display-11');
+  expect(body.contents[0].parts[0].text).not.toContain('corridor-right');
+});
+it.each([
+  { status: 400, expectedStatus: 502, message: /rejected the request/ },
+  { status: 404, expectedStatus: 502, message: /model is unavailable/ },
+  { status: 503, expectedStatus: 503, message: /temporarily busy/ },
+  { status: 429, expectedStatus: 429, message: /quota/ },
+])(
+  'reports provider HTTP $status without exposing its response or retrying automatically',
+  async ({ status, expectedStatus, message }) => {
+    const fake = fakeFetch({});
+    let providerCalls = 0;
+    const fetcher: typeof fetch = (url, init) => {
+      if (String(url).includes('googleapis.com')) {
+        providerCalls++;
+        return Promise.resolve(
+          response({ error: { message: 'server-secret' } }, status),
+        );
+      }
+      return fake.fetcher(url, init);
+    };
+    const result = await createHandler(env, fetcher)(request());
+    expect(result.status).toBe(expectedStatus);
+    const body = await result.text();
+    expect(body).toMatch(message);
+    expect(body).not.toContain('server-secret');
+    expect(providerCalls).toBe(1);
+  },
+);
+it('honors the selected assistance model and excludes thought text from the proposal', async () => {
+  const points = [
+    { x: 100, y: 100 },
+    { x: 900, y: 100 },
+    { x: 900, y: 800 },
+  ];
+  const fake = fakeFetch({ points });
+  let providerUrl = '';
+  const fetcher: typeof fetch = (url, init) => {
+    if (String(url).includes('googleapis.com')) {
+      providerUrl = String(url);
+      return Promise.resolve(
+        response({
+          candidates: [
+            {
+              finishReason: 'STOP',
+              content: {
+                parts: [
+                  { thought: true, text: 'Internal reasoning is not JSON.' },
+                  { text: JSON.stringify({ points }) },
+                ],
+              },
+            },
+          ],
+        }),
+      );
+    }
+    return fake.fetcher(url, init);
+  };
+  const result = await createHandler(
+    env,
+    fetcher,
+  )(request({ ...input, model: 'gemini-3.8-flash' }));
+  expect(result.status).toBe(200);
+  expect(providerUrl).toContain('/models/gemini-3.8-flash:generateContent');
+  const proposal = await result.json();
+  expect(proposal.model).toBe('gemini-3.8-flash');
+  expect(proposal.result).toEqual({ points });
+});
+it.each(['MAX_TOKENS', 'SAFETY'])(
+  'rejects a %s result even when it contains valid JSON',
+  async (finishReason) => {
+    const fake = fakeFetch({});
+    const fetcher: typeof fetch = (url, init) =>
+      String(url).includes('googleapis.com')
+        ? Promise.resolve(
+            response({
+              candidates: [
+                {
+                  finishReason,
+                  content: {
+                    parts: [
+                      {
+                        text: JSON.stringify({
+                          points: [
+                            { x: 100, y: 100 },
+                            { x: 900, y: 100 },
+                            { x: 900, y: 800 },
+                          ],
+                        }),
+                      },
+                    ],
+                  },
+                },
+              ],
+            }),
+          )
+        : fake.fetcher(url, init);
+    expect((await createHandler(env, fetcher)(request())).status).toBe(422);
+  },
+);
+it('keeps image rendering on Interactions with the original photo and design blueprint', async () => {
+  const fake = fakeFetch({});
+  const renderPhoto = {
+    ...p,
+    lip: {
+      points: [
+        { x: 100, y: 100 },
+        { x: 1000, y: 100 },
+        { x: 1000, y: 700 },
+        { x: 100, y: 700 },
+      ],
+      closed: true,
+      smoothing: 0.35,
+    },
+    designs: p.designs.map((d) => ({ ...d, teeth: seededTeeth(p) })),
+  };
+  let providerUrl = '';
+  let providerBody: Record<string, unknown> = {};
+  const fetcher: typeof fetch = (url, init) => {
+    if (String(url).includes('/rpc/'))
+      return Promise.resolve(response(renderPhoto));
+    if (String(url).includes('googleapis.com')) {
+      providerUrl = String(url);
+      providerBody = JSON.parse(String(init!.body));
+      return Promise.resolve(
+        response({
+          status: 'completed',
+          steps: [
+            {
+              type: 'model_output',
+              content: [
+                { type: 'image', mime_type: 'image/png', data: 'AAAAAAAA' },
+              ],
+            },
+          ],
+        }),
+      );
+    }
+    return fake.fetcher(url, init);
+  };
+  const result = await createHandler(
+    env,
+    fetcher,
+  )(
+    request({
+      ...input,
+      operation: 'render',
+      model: 'gemini-3.1-flash-image',
+      blueprint: input.image,
+    }),
+  );
+  expect(result.status).toBe(200);
+  expect(providerUrl).toBe(
+    'https://generativelanguage.googleapis.com/v1beta/interactions',
+  );
+  expect(providerBody).toMatchObject({
+    model: 'gemini-3.1-flash-image',
+    store: false,
+    stream: false,
+    input: [
+      expect.objectContaining({ type: 'text' }),
+      {
+        type: 'image',
+        mime_type: input.image.mimeType,
+        data: input.image.data,
+      },
+      {
+        type: 'image',
+        mime_type: input.image.mimeType,
+        data: input.image.data,
+      },
+    ],
+    response_format: {
+      type: 'image',
+      mime_type: 'image/png',
+      aspect_ratio: '3:2',
+    },
+  });
+  expect((await result.json()).result).toEqual({
+    mimeType: 'image/png',
+    data: 'AAAAAAAA',
+  });
 });
