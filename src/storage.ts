@@ -71,6 +71,25 @@ export const saveWorkspaces = (scope: string, cases: Workspace[]) =>
     cases.map((c) => workspaceSchema.parse(c)),
     store,
   );
+export async function loadCloudVersions(
+  scope: string,
+): Promise<Map<string, number>> {
+  const value = await get<unknown>('cloud-versions:' + scope, store);
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    return new Map();
+  return new Map(
+    Object.entries(value).filter(
+      (entry): entry is [string, number] =>
+        typeof entry[1] === 'number' &&
+        Number.isSafeInteger(entry[1]) &&
+        entry[1] > 0,
+    ),
+  );
+}
+export const saveCloudVersions = (
+  scope: string,
+  versions: Map<string, number>,
+) => set('cloud-versions:' + scope, Object.fromEntries(versions), store);
 export function download(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob),
     a = document.createElement('a');

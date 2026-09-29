@@ -33,6 +33,8 @@ There are no automatic ideal/abnormal classifications or universal proportion ta
 
 Review the source-photo overlay and select which measurements to apply. Existing clinician measurements take precedence. Suggestions become editable named measurements. Values are computed locally from geometry and confirmed calibration. Credentials remain in server secrets; manual tools remain available during provider outages.
 
+The sync before an AI request remembers the case's cloud revision across refreshes. Existing matching cases reconnect automatically. If **Choose a case version** appears, select **Continue with my local edits** to work in a separate case while preserving the original cloud record, or **Use the cloud version** to open it while retaining the local edits in another case. Then press the Gemini button again.
+
 ## References and checks
 
 The reference categories follow the facial cross, canine/incisal transfer lines, central-incisor proportions, tooth axes, gingival levels, and interdental relationships in [Coachman and Calamita's DSD workflow, QDT 2012](https://digitalsmiledesign.com/files/Old-Website-Assets/Static/Coachman_Calamita_DSD_Eng_12.pdf). Smile/lip relationships also follow the calibrated photo-analysis landmarks in [the standardized smile-analysis study](https://pmc.ncbi.nlm.nih.gov/articles/PMC8667490/).

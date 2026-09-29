@@ -1,5 +1,13 @@
 # Rebuild verification — 28 September 2026
 
+## Gemini case-sync recovery — 29 September 2026
+
+The reported “This case already exists in the cloud. Load cloud cases before syncing.” error came from keeping cloud revisions only in memory. Refreshing the browser cleared that revision and the next AI request attempted a duplicate insert. Account-scoped revisions now persist in IndexedDB. Cases from earlier versions reconnect after an owner-filtered lookup when the structured records match, with comparison independent of JSON key order. Differing records and stale optimistic revisions open a version chooser that preserves both copies. Same-account authentication events retain the loaded workspace, and late responses after sign-out cannot enter the guest scope.
+
+Production configuration, all 33 unit/integration tests, and the production build passed. The full 68-case browser suite passed before the final account-change guards; all 16 cloud-sync checks then passed against the final source in Chromium and WebKit. These checks cover refresh plus local edits, legacy case recovery, account-scoped revision storage, both version choices, concurrent cloud updates, cloud loading, repeated authentication events, insert races, and late responses after sign-out. Supabase's deployed metadata query confirmed owner RLS remains enabled for SELECT, INSERT, UPDATE, and DELETE. No schema or edge-function change is required.
+
+The tested frontend bundle is `index-DnPdw-oH.js`. Browser cloud/AI checks use synthetic photographs and intercepted responses; live Gemini provider quality is not established by these tests.
+
 ## DSD measurement assessment — 29 September 2026
 
 The Measure stage now includes 69 named DSD photo-measurement recipes, view-specific checklists, alignment/proportion/symmetry results, unavailable-anatomy reasons, and individually reviewed Gemini suggestions. See [DSD_MEASUREMENTS.md](DSD_MEASUREMENTS.md).

@@ -59,6 +59,8 @@ import {
   saveMedia,
   saveWorkspaces,
   loadWorkspaces,
+  loadCloudVersions,
+  saveCloudVersions,
   exportBackup,
   importBackup,
   download,
@@ -66,7 +68,14 @@ import {
 } from './storage';
 import { exportImage, drawMockup } from './render';
 import { matchPhotoLighting } from './lighting';
-import { supabase, fetchCloud, syncCloud } from './cloud';
+import {
+  supabase,
+  fetchCloud,
+  syncCloud,
+  sameWorkspace,
+  CloudConflictError,
+  type CloudRecord,
+} from './cloud';
 import {
   ASSIST_MODEL,
   RENDER_MODEL,
@@ -177,6 +186,7 @@ export default function App() {
     [calibration, setCalibration] = useState<Point[] | null>(null),
     [knownLength, setKnownLength] = useState('10'),
     [cloudBusy, setCloudBusy] = useState(false),
+    [cloudConflict, setCloudConflict] = useState<CloudRecord | null>(null),
     [proposal, setProposal] = useState<Proposal | null>(null),
     [assessmentId, setAssessmentId] = useState<string | null>(null),
     [selectedDsd, setSelectedDsd] = useState<string[]>([]),
@@ -248,7 +258,7 @@ export default function App() {
       }
     });
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      setLoaded(false);
+      if (scopeRef.current !== (session?.user.id ?? 'guest')) setLoaded(false);
       setUser(session?.user ?? null);
       setAuthReady(true);
     });
@@ -264,11 +274,13 @@ export default function App() {
     setCases([]);
     histories.current.clear();
     versions.current.clear();
+    setCloudConflict(null);
     setProposal(null);
     requestToken.current++;
-    loadWorkspaces(scope)
-      .then((local) => {
+    Promise.all([loadWorkspaces(scope), loadCloudVersions(scope)])
+      .then(([local, cloudVersions]) => {
         if (!active) return;
+        versions.current = cloudVersions;
         const initial = local.length
           ? local
           : [
@@ -578,12 +590,75 @@ export default function App() {
       throw new Error('Sign in to sync structured case records.');
     setCloudBusy(true);
     try {
-      await saveWorkspaces(scope, casesRef.current);
       await saveChain.current;
+      if (scopeRef.current !== scope)
+        throw new Error('The account changed. Reopen the case to continue.');
+      await saveWorkspaces(scope, casesRef.current);
       const version = await syncCloud(w, user, versions.current.get(w.id));
+      if (scopeRef.current !== scope)
+        throw new Error(
+          'The account changed during sync. Return to that account to continue.',
+        );
       versions.current.set(w.id, version);
+      await saveCloudVersions(scope, versions.current);
+      if (scopeRef.current !== scope)
+        throw new Error('The account changed. Reopen the case to continue.');
       setNotice(
         'Structured records synced. Original photos remain on this device; use a backup to move them.',
+      );
+    } catch (e) {
+      if (e instanceof CloudConflictError && scopeRef.current === scope) {
+        setCloudConflict(e.record);
+        setAccount(false);
+      }
+      throw e;
+    } finally {
+      setCloudBusy(false);
+    }
+  };
+  const resolveCloudConflict = async (useCloud: boolean) => {
+    if (!cloudConflict || !user || cloudConflict.workspace.ownerId !== user.id)
+      throw new Error('Return to the case account before choosing a version.');
+    const local = casesRef.current.find(
+      (c) => c.id === cloudConflict.workspace.id,
+    );
+    if (!local)
+      throw new Error('Reopen the local case before choosing a version.');
+    const copy: Workspace = {
+      ...local,
+      id: uid(),
+      name: local.name.slice(0, 107) + ' (local copy)',
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    const next = casesRef.current
+      .map((c) => (c.id === local.id ? cloudConflict.workspace : c))
+      .concat(copy);
+    setCloudBusy(true);
+    try {
+      await saveChain.current;
+      if (scopeRef.current !== scope)
+        throw new Error('The account changed. Reopen the case to continue.');
+      await saveWorkspaces(scope, next);
+      if (scopeRef.current !== scope)
+        throw new Error('The account changed. Reopen the case to continue.');
+      const nextVersions = new Map(versions.current);
+      nextVersions.set(cloudConflict.workspace.id, cloudConflict.version);
+      await saveCloudVersions(scope, nextVersions);
+      if (scopeRef.current !== scope)
+        throw new Error('The account changed. Reopen the case to continue.');
+      versions.current = nextVersions;
+      histories.current.delete(local.id);
+      casesRef.current = next;
+      setCases(next);
+      setCaseId(useCloud ? cloudConflict.workspace.id : copy.id);
+      setCloudConflict(null);
+      setProposal(null);
+      requestToken.current++;
+      setNotice(
+        useCloud
+          ? 'Cloud version opened. Your device’s edits are kept in a separate local case. Choose the AI request again to continue.'
+          : 'Your device’s edits are now a separate case. The existing cloud case is kept. Choose the AI request again to continue.',
       );
     } finally {
       setCloudBusy(false);
@@ -612,6 +687,7 @@ export default function App() {
     setProposal(null);
     try {
       await sync(workspace);
+      if (requestToken.current !== token) return;
       let blueprint: { mimeType: 'image/jpeg'; data: string } | undefined;
       if (operation === 'render') {
         const scale = Math.min(1, 1600 / Math.max(photo.width, photo.height)),
@@ -2133,6 +2209,35 @@ export default function App() {
           </button>
         </Modal>
       )}
+      {cloudConflict && (
+        <Modal
+          title="Choose a case version"
+          close={() => setCloudConflict(null)}
+        >
+          <p>
+            This device and the cloud have different versions of this case. Both
+            versions will be kept on this device.
+          </p>
+          <button
+            className="primary full"
+            disabled={cloudBusy}
+            onClick={() => guard(() => resolveCloudConflict(false))}
+          >
+            Continue with my local edits
+          </button>
+          <button
+            className="full"
+            disabled={cloudBusy}
+            onClick={() => guard(() => resolveCloudConflict(true))}
+          >
+            Use the cloud version
+          </button>
+          <p className="note">
+            Continuing with local edits creates a separate case. Original photos
+            remain on this device.
+          </p>
+        </Modal>
+      )}
       {calibration && photo && (
         <Modal title="Confirm the reference" close={() => setCalibration(null)}>
           <p>
@@ -2205,19 +2310,21 @@ export default function App() {
                     setCloudBusy(true);
                     try {
                       const rows = await fetchCloud();
+                      if (scopeRef.current !== scope)
+                        throw new Error(
+                          'The account changed. Reopen the case to continue.',
+                        );
                       const next = [...casesRef.current];
+                      const nextVersions = new Map(versions.current);
                       for (const row of rows) {
                         const local = next.find(
                           (c) => c.id === row.workspace.id,
                         );
                         if (!local) {
                           next.push(row.workspace);
-                          versions.current.set(row.workspace.id, row.version);
-                        } else if (
-                          JSON.stringify(local) ===
-                          JSON.stringify(row.workspace)
-                        ) {
-                          versions.current.set(row.workspace.id, row.version);
+                          nextVersions.set(row.workspace.id, row.version);
+                        } else if (sameWorkspace(local, row.workspace)) {
+                          nextVersions.set(row.workspace.id, row.version);
                         } else if (
                           !next.some(
                             (c) =>
@@ -2240,6 +2347,12 @@ export default function App() {
                           });
                         }
                       }
+                      await saveCloudVersions(scope, nextVersions);
+                      if (scopeRef.current !== scope)
+                        throw new Error(
+                          'The account changed. Reopen the case to continue.',
+                        );
+                      versions.current = nextVersions;
                       casesRef.current = next;
                       setCases(next);
                       setNotice(
