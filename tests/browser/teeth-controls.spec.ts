@@ -93,6 +93,50 @@ test('natural proportions can repair one tooth or the arch and undo as one edit'
     .poll(async () => (await savedPhoto(page)).designs[0].teeth)
     .toEqual(selected);
 });
+test('frontal reference styles individual teeth or the arch and survives reload and export', async ({
+  page,
+}) => {
+  await setup(page);
+  await page.getByLabel('Texture', { exact: true }).selectOption('detailed');
+  await page
+    .getByLabel('Form', { exact: true })
+    .selectOption('frontal-reference');
+  await expect(page.getByLabel('Texture', { exact: true })).toBeDisabled();
+  await expect(page.getByLabel('Texture', { exact: true })).toHaveValue(
+    'natural',
+  );
+  const individual = (await savedPhoto(page)).designs[0].teeth;
+  expect(individual.find((t) => t.fdi === 11)!.form).toBe('frontal-reference');
+  expect(individual.filter((t) => t.form === 'frontal-reference')).toHaveLength(
+    1,
+  );
+  await page
+    .getByLabel('Move and style the whole smile', { exact: true })
+    .check();
+  await page
+    .getByLabel('Form', { exact: true })
+    .selectOption('frontal-reference');
+  await expect
+    .poll(async () =>
+      (await savedPhoto(page)).designs[0].teeth.every(
+        (t) => t.form === 'frontal-reference' && t.texture === 'natural',
+      ),
+    )
+    .toBe(true);
+  await page.getByRole('button', { name: 'BL2', exact: true }).click();
+  const styled = (await savedPhoto(page)).designs[0].teeth;
+  await page.reload();
+  await expect
+    .poll(async () => (await savedPhoto(page)).designs[0].teeth)
+    .toEqual(styled);
+  await page.getByRole('button', { name: '5 Compare', exact: true }).click();
+  const download = page.waitForEvent('download');
+  await page
+    .getByRole('button', { name: 'Export simulation', exact: true })
+    .click();
+  expect((await download).suggestedFilename()).toContain('simulation');
+});
+
 async function savedPhoto(page: Page) {
   await expect(
     page.getByText('Saved on this device', { exact: true }),

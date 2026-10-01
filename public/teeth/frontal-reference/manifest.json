@@ -1,0 +1,68 @@
+{
+  "name": "Frontal reference",
+  "perspective": "Frontal smile view",
+  "texture": "natural",
+  "provenance": "Reference-based ImageGen reconstruction with slightly pointed downward canine cusps (13, 23).",
+  "teeth": [
+    {
+      "fdi": 15,
+      "width": 184,
+      "height": 348,
+      "file": "15.png"
+    },
+    {
+      "fdi": 14,
+      "width": 235,
+      "height": 355,
+      "file": "14.png"
+    },
+    {
+      "fdi": 13,
+      "width": 284,
+      "height": 392,
+      "file": "13.png"
+    },
+    {
+      "fdi": 12,
+      "width": 297,
+      "height": 345,
+      "file": "12.png"
+    },
+    {
+      "fdi": 11,
+      "width": 347,
+      "height": 367,
+      "file": "11.png"
+    },
+    {
+      "fdi": 21,
+      "width": 356,
+      "height": 363,
+      "file": "21.png"
+    },
+    {
+      "fdi": 22,
+      "width": 295,
+      "height": 340,
+      "file": "22.png"
+    },
+    {
+      "fdi": 23,
+      "width": 292,
+      "height": 387,
+      "file": "23.png"
+    },
+    {
+      "fdi": 24,
+      "width": 221,
+      "height": 335,
+      "file": "24.png"
+    },
+    {
+      "fdi": 25,
+      "width": 169,
+      "height": 303,
+      "file": "25.png"
+    }
+  ]
+}

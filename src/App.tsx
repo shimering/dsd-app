@@ -547,7 +547,17 @@ export default function App() {
       replaceDesign(photo, {
         ...design,
         teeth: design.teeth.map((t) =>
-          !tooth || group || t.fdi === tooth.fdi ? { ...t, [key]: value } : t,
+          !tooth || group || t.fdi === tooth.fdi
+            ? key === 'texture' && t.form === 'frontal-reference'
+              ? t
+              : {
+                  ...t,
+                  [key]: value,
+                  ...(key === 'form' && value === 'frontal-reference'
+                    ? { texture: 'natural' as const }
+                    : {}),
+                }
+            : t,
         ),
       }),
     );
@@ -1609,6 +1619,9 @@ export default function App() {
                     <select
                       aria-label="Texture"
                       value={tooth?.texture ?? design.teeth[0].texture}
+                      disabled={design.teeth
+                        .filter((t) => !tooth || group || t.fdi === tooth.fdi)
+                        .every((t) => t.form === 'frontal-reference')}
                       onChange={(e) => styleTeeth('texture', e.target.value)}
                     >
                       {TEXTURES.map((t) => (
@@ -1616,6 +1629,14 @@ export default function App() {
                       ))}
                     </select>
                   </label>
+                  {(tooth?.form ?? design.teeth[0].form) ===
+                    'frontal-reference' && (
+                    <p className="note">
+                      Separate right and left crowns from the frontal reference,
+                      with the photographed enamel texture. Adjust width and
+                      height to fit this photo.
+                    </p>
+                  )}
                   <div className="field">
                     Visual shade
                     <div className="shade-options">

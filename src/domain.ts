@@ -22,6 +22,7 @@ export const FORMS = [
   { id: 'square', name: 'Soft square' },
   { id: 'tapered', name: 'Tapered' },
   { id: 'rounded', name: 'Rounded' },
+  { id: 'frontal-reference', name: 'Frontal reference' },
 ] as const;
 export const TEXTURES = ['smooth', 'natural', 'detailed'] as const;
 export const SHADES = ['A1', 'A2', 'B1', 'BL2', 'BL1'] as const;
@@ -85,7 +86,7 @@ export const toothSchema = z
       .number()
       .int()
       .refine((n) => FDI.includes(n as (typeof FDI)[number])),
-    form: z.enum(['oval', 'square', 'tapered', 'rounded']),
+    form: z.enum(FORMS.map((form) => form.id)),
     texture: z.enum(TEXTURES),
     shade: z.enum(SHADES),
     x: z.number().finite(),

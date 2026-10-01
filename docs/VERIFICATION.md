@@ -1,3 +1,9 @@
+# Frontal reference tooth library — 1 October 2026
+
+Added ten independent transparent reference-based crowns (FDI 15–25), including slightly pointed downward canine cusps on 13 and 23. The **Frontal reference** form preserves separate right and left sprites, offers individual downloads in library review, and works with visual shades, lighting, local persistence, and export. See [FRONTAL_REFERENCE.md](FRONTAL_REFERENCE.md) for asset provenance and prompts and [the library preview](previews/frontal-reference-library.png).
+
+All **62 unit/integration tests** and **28 focused Chromium/WebKit browser scenarios** pass, along with the production build and whitespace check. The focused checks cover unique transparent sprites, canine cusp direction, left-side orientation, library downloads, individual and whole-smile styling, reload, lighting, lip clipping, export, and existing tooth controls. Desktop and phone previews were visually reviewed. The tested frontend entry bundle is `index-CoFTklAS.js`.
+
 # Tooth overlay recalculation — 1 October 2026
 
 Added **Recalculate from measurements** in Teeth after the ten overlays are placed. It explicitly fits the active design to confirmed ruler widths, central-incisor proportions, dental midline, and visible incisal/gingival curves. Tooth styles, visibility, perspective, lighting, guide targets, and other alternatives remain intact. Draft/unavailable guides are ignored; conflicting crown constraints retain the affected tooth and are reported. The operation is one undo/redo step and persists through reload. See [TEETH_CONTROLS.md](TEETH_CONTROLS.md) for fitting priorities.

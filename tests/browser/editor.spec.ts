@@ -109,6 +109,97 @@ test('corrected library has ten crowns, rounded cervical caps and single premola
     expect(shape.cusp, JSON.stringify(shape)).toBe(true);
   }
 });
+test('frontal reference has ten transparent independent crowns, downward canine cusps and distinct left rendering', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page
+    .getByRole('button', { name: 'Tooth library', exact: true })
+    .click();
+  const dialog = page.getByRole('dialog', { name: 'Tooth library review' });
+  await dialog
+    .getByLabel('Form', { exact: true })
+    .selectOption('frontal-reference');
+  await expect(dialog.getByLabel('Texture', { exact: true })).toBeDisabled();
+  await expect(dialog.getByRole('link')).toHaveCount(10);
+  await expect
+    .poll(() =>
+      dialog
+        .locator('.reference-crowns img')
+        .evaluateAll((images) =>
+          images.every((image) => (image as HTMLImageElement).naturalWidth > 0),
+        ),
+    )
+    .toBe(true);
+  const result = await page.evaluate(async () => {
+    const { loadToothLibrary, toothSprite } = await import('/src/assets.ts');
+    const { newPhoto, seededTeeth } = await import('/src/domain.ts');
+    const { drawTooth } = await import('/src/render.ts');
+    await loadToothLibrary();
+    const teeth = seededTeeth(newPhoto('', '', 1200, 800, 'image/png')).map(
+      (t) => ({ ...t, form: 'frontal-reference' as const }),
+    );
+    return teeth.map((tooth) => {
+      const source = toothSprite(tooth)!;
+      const pixels = source
+        .getContext('2d')!
+        .getImageData(0, 0, source.width, source.height).data;
+      const bottom = (fraction: number) => {
+        const x = Math.floor((source.width - 1) * fraction);
+        for (let y = source.height - 1; y >= 0; y--) {
+          if (pixels[(y * source.width + x) * 4 + 3] > 110) return y;
+        }
+        return 0;
+      };
+      const expected = document.createElement('canvas');
+      expected.width = source.width;
+      expected.height = source.height;
+      expected.getContext('2d')!.drawImage(source, 0, 0);
+      const rendered = document.createElement('canvas');
+      rendered.width = source.width;
+      rendered.height = source.height;
+      drawTooth(rendered.getContext('2d')!, {
+        ...tooth,
+        x: source.width / 2,
+        y: source.height / 2,
+        width: source.width,
+        height: source.height,
+        rotation: 0,
+        perspective: 0,
+      });
+      return {
+        fdi: tooth.fdi,
+        source: source.toDataURL(),
+        matches: rendered.toDataURL() === expected.toDataURL(),
+        corners: [
+          0,
+          source.width - 1,
+          (source.height - 1) * source.width,
+          source.width * source.height - 1,
+        ].map((p) => pixels[p * 4 + 3]),
+        downwardTip: bottom(0.5) - Math.max(bottom(0.2), bottom(0.8)),
+      };
+    });
+  });
+  expect(new Set(result.map((t) => t.source)).size).toBe(10);
+  for (const tooth of result) {
+    expect(tooth.corners, `Transparent corners for ${tooth.fdi}`).toEqual([
+      0, 0, 0, 0,
+    ]);
+    expect(tooth.matches, `Reference orientation for ${tooth.fdi}`).toBe(true);
+    if (tooth.fdi === 13 || tooth.fdi === 23)
+      expect(tooth.downwardTip).toBeGreaterThan(10);
+  }
+  const download = page.waitForEvent('download');
+  await dialog
+    .getByRole('link', { name: 'Download reference tooth 13', exact: true })
+    .click();
+  expect((await download).suggestedFilename()).toBe('frontal-reference-13.png');
+  await page.screenshot({
+    path: `test-results/frontal-reference-${test.info().project.name}.png`,
+  });
+});
+
 test('photo, calibration, measurements, lip mask, all ten teeth, compare and local reopening', async ({
   page,
 }) => {

@@ -9,6 +9,7 @@ import {
   type Tooth,
 } from './domain';
 import { drawTooth } from './render';
+import { toothSprite } from './assets';
 import { X } from 'lucide-react';
 
 export function ToothReview({
@@ -28,7 +29,11 @@ export function ToothReview({
     const previous = document.activeElement as HTMLElement,
       el = dialog.current!;
     const controls = () =>
-      Array.from(el.querySelectorAll<HTMLElement>('button,input,select'));
+      Array.from(
+        el.querySelectorAll<HTMLElement>(
+          'button:not(:disabled),input:not(:disabled),select:not(:disabled),a[href]',
+        ),
+      );
     controls()[0]?.focus();
     const key = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -61,7 +66,26 @@ export function ToothReview({
       { x: 1160, y: 350 },
       { x: 40, y: 350 },
     ];
-    const teeth = seededTeeth(p).map((t) => ({ ...t, form, texture, shade }));
+    let teeth = seededTeeth(p).map((t) => ({ ...t, form, texture, shade }));
+    if (form === 'frontal-reference' && ready) {
+      const crowns = teeth.map((t) => toothSprite(t)!);
+      const scale = 1050 / crowns.reduce((sum, crown) => sum + crown.width, 0);
+      let x = 75;
+      teeth = teeth.map((t, index) => {
+        const width = crowns[index].width * scale;
+        const height = crowns[index].height * scale;
+        const tooth = {
+          ...t,
+          x: x + width / 2,
+          y: t.y + t.height / 2 - height / 2,
+          width,
+          height,
+          rotation: 0,
+        };
+        x += width;
+        return tooth;
+      });
+    }
     teeth.forEach((t) => drawTooth(ctx, t));
     if (guides) {
       ctx.strokeStyle = '#6ccac055';
@@ -90,31 +114,40 @@ export function ToothReview({
         <div className="modal-title">
           <div>
             <span className="eyebrow">UPPER ARCH · FDI 15–25</span>
-            <h2>A more natural contour</h2>
+            <h2>
+              {form === 'frontal-reference'
+                ? 'Your frontal reference'
+                : 'A more natural contour'}
+            </h2>
           </div>
           <button aria-label="Close tooth review" onClick={onClose}>
             <X size={20} />
           </button>
         </div>
         <p>
-          Rounded cervical contours across every tooth. Premolars show a single
-          buccal cusp. This arrangement is a starting point for adjustment on a
-          photo.
+          {form === 'frontal-reference'
+            ? 'Ten separate crowns based on your smile reference, preserving the frontal perspective and distinct right and left teeth. Hidden crown edges are reconstructed. This arrangement is a starting point for adjustment on a photo.'
+            : 'Rounded cervical contours across every tooth. Premolars show a single buccal cusp. This arrangement is a starting point for adjustment on a photo.'}
         </p>
         <div className="review-canvas">
           <canvas
             ref={canvas}
             width="1200"
             height="420"
-            aria-label="All ten upper teeth with corrected cervical contours"
+            aria-label="All ten upper teeth in the selected library set"
           />
         </div>
         <div className="review-controls">
           <label>
             Form
             <select
+              aria-label="Form"
               value={form}
-              onChange={(e) => setForm(e.target.value as Tooth['form'])}
+              onChange={(e) => {
+                const value = e.target.value as Tooth['form'];
+                setForm(value);
+                if (value === 'frontal-reference') setTexture('natural');
+              }}
             >
               {FORMS.map((f) => (
                 <option key={f.id} value={f.id}>
@@ -126,7 +159,9 @@ export function ToothReview({
           <label>
             Texture
             <select
+              aria-label="Texture"
               value={texture}
+              disabled={form === 'frontal-reference'}
               onChange={(e) => setTexture(e.target.value as Tooth['texture'])}
             >
               {TEXTURES.map((t) => (
@@ -137,6 +172,7 @@ export function ToothReview({
           <label>
             Visual shade
             <select
+              aria-label="Visual shade"
               value={shade}
               onChange={(e) => setShade(e.target.value as Tooth['shade'])}
             >
@@ -154,6 +190,27 @@ export function ToothReview({
             Midline
           </label>
         </div>
+        {form === 'frontal-reference' && (
+          <div
+            className="reference-crowns"
+            aria-label="Individual reference teeth"
+          >
+            {FDI.map((fdi) => (
+              <a
+                key={fdi}
+                href={`/teeth/frontal-reference/${fdi}.png`}
+                download={`frontal-reference-${fdi}.png`}
+                aria-label={`Download reference tooth ${fdi}`}
+              >
+                <img
+                  src={`/teeth/frontal-reference/${fdi}.png`}
+                  alt={`Tooth ${fdi}`}
+                />
+                <span>{fdi}</span>
+              </a>
+            ))}
+          </div>
+        )}
         <div className="note">
           Patient’s right → {FDI.slice(0, 5).join(' · ')} │{' '}
           {FDI.slice(5).join(' · ')} ← Patient’s left

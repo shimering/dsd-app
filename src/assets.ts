@@ -6,7 +6,9 @@ export const crownColumn = (fdi: number) =>
   ] ?? -1;
 const sprites = new Map<string, HTMLCanvasElement>();
 const spriteKey = (tooth: Pick<Tooth, 'form' | 'texture' | 'fdi'>) =>
-  `${tooth.form}/${tooth.texture}/${crownColumn(tooth.fdi)}`;
+  tooth.form === 'frontal-reference'
+    ? `${tooth.form}/${tooth.fdi}`
+    : `${tooth.form}/${tooth.texture}/${crownColumn(tooth.fdi)}`;
 let pending: Promise<void> | undefined;
 
 // Isolate the enamel component at display time. Generative atlases can contain
@@ -105,6 +107,24 @@ export function loadToothLibrary(): Promise<void> {
   if (pending) return pending;
   pending = Promise.all(
     FORMS.map(async (form) => {
+      if (form.id === 'frontal-reference') {
+        await Promise.all(
+          FDI.map(async (fdi) => {
+            const image = new Image();
+            image.src = `/teeth/frontal-reference/${fdi}.png`;
+            await image.decode();
+            const crown = document.createElement('canvas');
+            crown.width = image.width;
+            crown.height = image.height;
+            crown.getContext('2d')!.drawImage(image, 0, 0);
+            sprites.set(
+              spriteKey({ form: form.id, texture: 'natural', fdi }),
+              crown,
+            );
+          }),
+        );
+        return;
+      }
       const image = new Image();
       image.src = `/teeth/${form.id}.png`;
       await image.decode();
@@ -159,4 +179,5 @@ export function toothSprite(tooth: Tooth): HTMLCanvasElement | undefined {
   shaded.set(shadeKey, canvas);
   return canvas;
 }
-export const libraryCount = () => FDI.length * FORMS.length * TEXTURES.length;
+export const libraryCount = () =>
+  FDI.length * ((FORMS.length - 1) * TEXTURES.length + 1);

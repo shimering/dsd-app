@@ -10,7 +10,7 @@ export function drawTooth(ctx: CanvasRenderingContext2D, t: Tooth) {
     ctx.save();
     ctx.translate(t.x, t.y);
     ctx.rotate((t.rotation * Math.PI) / 180);
-    if (t.fdi >= 21) ctx.scale(-1, 1);
+    if (t.fdi >= 21 && t.form !== 'frontal-reference') ctx.scale(-1, 1);
     ctx.drawImage(image, -t.width / 2, -t.height / 2, t.width, t.height);
     ctx.restore();
     return;
@@ -19,7 +19,7 @@ export function drawTooth(ctx: CanvasRenderingContext2D, t: Tooth) {
   ctx.save();
   ctx.translate(t.x, t.y);
   ctx.rotate((t.rotation * Math.PI) / 180);
-  if (t.fdi >= 21) ctx.scale(-1, 1);
+  if (t.fdi >= 21 && t.form !== 'frontal-reference') ctx.scale(-1, 1);
   const count = 128;
   for (let row = 0; row < count; row++) {
     const start = Math.max(0, row / count - 0.0015),
