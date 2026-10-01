@@ -4,6 +4,8 @@ Added ten independent transparent reference-based crowns (FDI 15–25), includin
 
 All **62 unit/integration tests** and **28 focused Chromium/WebKit browser scenarios** pass, along with the production build and whitespace check. The focused checks cover unique transparent sprites, canine cusp direction, left-side orientation, library downloads, individual and whole-smile styling, reload, lighting, lip clipping, export, and existing tooth controls. Desktop and phone previews were visually reviewed. The tested frontend entry bundle is `index-CoFTklAS.js`.
 
+The user authorized publishing this update. Commit `af372bb033a573356704a9b7b0ca357f47a8c193` was pushed to GitHub `shimering/dsd-app` main, triggering the existing Cloudflare production workflow. [The live app](https://dsd-app.gazarxperia.workers.dev) now serves `index-CoFTklAS.js` with SHA-256 `a56b74cc4a243a23e5b34dd1a328e4e6b4a51e24995040da6cd0dad2e40a913c`. The entry bundle and all ten individual reference PNGs returned HTTP 200 and matched the tested local files byte for byte. No backend deployment was needed.
+
 # Tooth overlay recalculation — 1 October 2026
 
 Added **Recalculate from measurements** in Teeth after the ten overlays are placed. It explicitly fits the active design to confirmed ruler widths, central-incisor proportions, dental midline, and visible incisal/gingival curves. Tooth styles, visibility, perspective, lighting, guide targets, and other alternatives remain intact. Draft/unavailable guides are ignored; conflicting crown constraints retain the affected tooth and are reported. The operation is one undo/redo step and persists through reload. See [TEETH_CONTROLS.md](TEETH_CONTROLS.md) for fitting priorities.
