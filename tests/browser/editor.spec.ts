@@ -1,3 +1,4 @@
+import { openUtilities } from './frame-fixtures';
 import { test, expect, type Page } from '@playwright/test';
 const photoSVG =
   '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800"><rect width="1200" height="800" fill="#a97763"/><ellipse cx="600" cy="460" rx="295" ry="110" fill="#602e35"/><ellipse cx="600" cy="455" rx="245" ry="66" fill="#242326"/><path d="M390 425H810V455H390z" fill="#eadcba"/></svg>';
@@ -18,13 +19,11 @@ async function upload(page: Page) {
       ),
     );
   }, photoSVG);
-  await page
-    .locator('input[type=file][multiple]')
-    .setInputFiles({
-      name: 'Test smile.png',
-      mimeType: 'image/png',
-      buffer: Buffer.from(bytes),
-    });
+  await page.locator('input[type=file][multiple]').setInputFiles({
+    name: 'Test smile.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(bytes),
+  });
   await expect(page.getByTestId('canvas-surface')).toBeVisible();
   await expect(
     page.getByText('Saved on this device', { exact: true }),
@@ -119,6 +118,7 @@ test('photo, calibration, measurements, lip mask, all ten teeth, compare and loc
   ).toBeVisible();
   await upload(page);
   await page.getByRole('button', { name: '2 Measure', exact: true }).click();
+  await openUtilities(page);
   await page.getByRole('button', { name: 'Calibrate', exact: true }).click();
   await point(page, 300, 200);
   await point(page, 500, 200);
@@ -171,6 +171,7 @@ test('photo, calibration, measurements, lip mask, all ten teeth, compare and loc
   ).toBeVisible();
   await page.reload();
   await page.getByRole('button', { name: '2 Measure', exact: true }).click();
+  await openUtilities(page);
   await expect(page.getByText('15.00 mm', { exact: true })).toBeVisible();
   await page.screenshot({
     path: 'test-results/workspace-' + test.info().project.name + '.png',

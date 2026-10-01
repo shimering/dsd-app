@@ -3,6 +3,10 @@ import { createHandler } from '../../supabase/functions/smile-assist/handler';
 import { DEFAULT_LIGHTING, newPhoto, seededTeeth, uid } from '../../src/domain';
 import { applicableDsd } from '../../src/dsdCatalog';
 import { ASSIST_MODEL } from '../../src/assistProtocol';
+import {
+  BASIC_TOOLS,
+  basicFrameSuggestionSchema,
+} from '../../src/basicFrameSchema';
 const env = {
   get: (name: string) =>
     ({
@@ -506,4 +510,55 @@ it('keeps image rendering on Interactions with the original photo and design blu
     mimeType: 'image/png',
     data: 'AAAAAAAA',
   });
+});
+it('serves only six basic-frame tools and requires complete identities while retaining authenticated checks', async () => {
+  const valid = {
+    templates: [],
+    unavailable: BASIC_TOOLS.map((t) => ({ id: t.id, reason: 'Not visible.' })),
+  };
+  const fake = fakeFetch(valid);
+  const result = await createHandler(
+    env,
+    fake.fetcher,
+  )(request({ ...input, operation: 'basic-frame' }));
+  expect(result.status).toBe(200);
+  expect(
+    basicFrameSuggestionSchema.parse((await result.json()).result).unavailable,
+  ).toHaveLength(6);
+  const provider = fake.requests.find((r) => r.url.includes('googleapis.com'))!;
+  expect(provider.init!.body).toContain('15,14,13,12,11,21,22,23,24,25');
+  expect(provider.init!.body).toContain('never target ratios');
+  for (const bad of [
+    { ...valid, unavailable: valid.unavailable.slice(1) },
+    {
+      ...valid,
+      unavailable: [...valid.unavailable.slice(1), valid.unavailable[1]],
+    },
+  ]) {
+    const f = fakeFetch(bad);
+    expect(
+      (
+        await createHandler(
+          env,
+          f.fetcher,
+        )(request({ ...input, operation: 'basic-frame' }))
+      ).status,
+    ).toBe(422);
+  }
+  expect(
+    (
+      await createHandler(
+        env,
+        fakeFetch(valid).fetcher,
+      )(request({ ...input, operation: 'basic-frame' }, false))
+    ).status,
+  ).toBe(401);
+  expect(
+    (
+      await createHandler(
+        env,
+        fakeFetch(valid, 1).fetcher,
+      )(request({ ...input, operation: 'basic-frame' }))
+    ).status,
+  ).toBe(409);
 });

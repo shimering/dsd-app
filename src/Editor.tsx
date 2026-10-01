@@ -30,6 +30,16 @@ import {
 import { dsdDefinition, dsdAllowsZero } from './dsdCatalog';
 import { saveDsdMeasurement } from './dsd';
 import {
+  getTemplate,
+  setTemplate,
+  templateBounds,
+  templateFits,
+  transformTemplate,
+  moveAnchor,
+} from './basicFrame';
+import { drawBasicFrame, hitFrame, type FrameHit } from './frameCanvas';
+import type { BasicToolId } from './basicFrameSchema';
+import {
   clamp,
   distance,
   fitScale,
@@ -73,9 +83,12 @@ type Props = {
   canRedo: boolean;
   assessmentId?: string | null;
   showAllDsd?: boolean;
+  basicToolId?: BasicToolId | null;
+  showTeethGuides?: boolean;
 };
 type Drag = {
-  type: 'point' | 'tooth' | 'resize' | 'ink' | 'pan' | 'compare';
+  type: 'point' | 'tooth' | 'resize' | 'ink' | 'pan' | 'compare' | 'frame';
+  frame?: FrameHit;
   origin: Point;
   photo: Photo;
   selection: Selection;
@@ -129,19 +142,8 @@ export function Editor(props: Props) {
   photoRef.current = current;
   const measurementVisible = (m: Measurement) =>
     !m.assessmentId ||
-    props.showAllDsd ||
     m.assessmentId === props.assessmentId ||
-    (selection?.kind === 'measurement' && selection.id === m.id) ||
-    [
-      'facial-horizontal',
-      'facial-midline',
-      'dental-midline',
-      'incisal-plane',
-      'canine-plane',
-      'gingival-reference',
-    ].includes(m.assessmentId) ||
-    (['incisal-arc', 'lower-lip-arc'].includes(props.assessmentId ?? '') &&
-      ['incisal-arc', 'lower-lip-arc'].includes(m.assessmentId));
+    (selection?.kind === 'measurement' && selection.id === m.id);
   const view: View = {
     ...size,
     photoWidth: photo.width,
@@ -201,7 +203,7 @@ export function Editor(props: Props) {
     pointers.current.clear();
     pen.current = null;
     setCursor(null);
-  }, [tool, step, photo.activeDesignId, props.assessmentId]);
+  }, [tool, step, photo.activeDesignId, props.assessmentId, props.basicToolId]);
   const cancel = () => {
     const original =
       gesture.current?.type === 'teeth'
@@ -326,6 +328,16 @@ export function Editor(props: Props) {
         corners.forEach((p) => point(p, false));
       }
     }
+    if (step === 'Measure')
+      drawBasicFrame(
+        ctx,
+        current,
+        props.basicToolId ?? null,
+        !!props.showAllDsd,
+        view.scale,
+      );
+    if (step === 'Teeth' && props.showTeethGuides)
+      drawBasicFrame(ctx, current, null, true, view.scale, true);
     if (draft.length) {
       line(
         [...draft, ...(cursor && tool !== 'ink' ? [cursor] : [])],
@@ -348,6 +360,8 @@ export function Editor(props: Props) {
     step,
     props.assessmentId,
     props.showAllDsd,
+    props.basicToolId,
+    props.showTeethGuides,
     tool,
     props.split,
     props.libraryReady,
@@ -608,6 +622,25 @@ export function Editor(props: Props) {
     if (raw.x < 0 || raw.y < 0 || raw.x > photo.width || raw.y > photo.height)
       return;
     // A guided redraw places new endpoints even over existing landmarks.
+    const frame =
+      step === 'Measure' && tool === 'select'
+        ? hitFrame(photo, props.basicToolId ?? null, p, viewRef.current.scale)
+        : null;
+    if (frame) {
+      onSelect(null);
+      drag.current = {
+        type: 'frame',
+        frame,
+        origin: p,
+        photo,
+        selection: null,
+        view: viewRef.current,
+        pointerId: e.pointerId,
+        latest: photo,
+      };
+      setCursor(p);
+      return;
+    }
     const picked = props.assessmentId && tool !== 'select' ? null : hit(p);
     if (picked) {
       let corner = -1;
@@ -775,6 +808,48 @@ export function Editor(props: Props) {
       return;
     }
     let next = d.photo;
+    if (d.type === 'frame' && d.frame) {
+      const t = getTemplate(d.photo, d.frame.id),
+        b = t && templateBounds(t);
+      if (t && b) {
+        if (d.frame.mode === 'anchor')
+          next = moveAnchor(d.photo, t.id, d.frame.path!, d.frame.key!, p);
+        else {
+          const scale =
+            d.frame.mode === 'scale'
+              ? distance(p, b.center) /
+                Math.max(1, distance(d.origin, b.center))
+              : 1;
+          const degrees =
+            d.frame.mode === 'rotate'
+              ? ((Math.atan2(p.y - b.center.y, p.x - b.center.x) -
+                  Math.atan2(
+                    d.origin.y - b.center.y,
+                    d.origin.x - b.center.x,
+                  )) *
+                  180) /
+                Math.PI
+              : 0;
+          const target =
+            d.frame.mode === 'move'
+              ? {
+                  x: b.center.x + p.x - d.origin.x,
+                  y: b.center.y + p.y - d.origin.y,
+                }
+              : b.center;
+          const updated = transformTemplate(
+            t,
+            b.center,
+            target,
+            scale,
+            degrees,
+          );
+          if (templateFits(d.photo, updated))
+            next = setTemplate(d.photo, updated);
+          else next = d.latest;
+        }
+      }
+    }
     if (d.type === 'point') next = movePoint(d.photo, d.selection, p);
     if (d.type === 'resize' && d.selection?.kind === 'tooth') {
       const design = activeDesign(d.photo),
@@ -846,7 +921,12 @@ export function Editor(props: Props) {
     const d = drag.current;
     if (d?.pointerId === e.pointerId) {
       if (!cancelled) {
-        if (d.type === 'point' || d.type === 'tooth' || d.type === 'resize') {
+        if (
+          d.type === 'point' ||
+          d.type === 'tooth' ||
+          d.type === 'resize' ||
+          d.type === 'frame'
+        ) {
           if (JSON.stringify(d.latest) !== JSON.stringify(d.photo))
             onChange(d.latest);
         }
@@ -946,18 +1026,24 @@ export function Editor(props: Props) {
             </button>
           </>
         )}
-        {step === 'Measure' &&
-          measureTools.map(([t, label, Icon]) => (
-            <button
-              key={t}
-              title={label}
-              aria-label={label}
-              className={tool === t ? 'active' : ''}
-              onClick={() => onTool(t)}
-            >
-              <Icon size={19} />
-            </button>
-          ))}
+        {step === 'Measure' && (
+          <details className="annotation-tools">
+            <summary>Annotations</summary>
+            <div className="annotation-tool-menu">
+              {measureTools.map(([t, label, Icon]) => (
+                <button
+                  key={t}
+                  title={label}
+                  aria-label={label}
+                  className={tool === t ? 'active' : ''}
+                  onClick={() => onTool(t)}
+                >
+                  <Icon size={19} />
+                </button>
+              ))}
+            </div>
+          </details>
+        )}
         {step === 'Lip outline' && (
           <button
             aria-label="Trace lip outline"

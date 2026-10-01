@@ -87,7 +87,18 @@ import {
 } from './assistProtocol';
 import { requestAssistance } from './ai';
 import { ProposalPreview } from './ProposalPreview';
-import { DsdPanel } from './DsdPanel';
+import { BasicFramePanel } from './BasicFramePanel';
+import {
+  BASIC_TOOLS,
+  basicFrameSuggestionSchema,
+  type BasicToolId,
+} from './basicFrameSchema';
+import {
+  getTemplate,
+  seedTemplate,
+  setTemplate,
+  applyBasicSuggestion,
+} from './basicFrame';
 import { dsdDefinition } from './dsdCatalog';
 import { applyDsdSuggestion, dsdMeasurement, dsdState } from './dsd';
 import { assessmentSchema } from './assistProtocol';
@@ -189,6 +200,8 @@ export default function App() {
     [cloudConflict, setCloudConflict] = useState<CloudRecord | null>(null),
     [proposal, setProposal] = useState<Proposal | null>(null),
     [assessmentId, setAssessmentId] = useState<string | null>(null),
+    [basicToolId, setBasicToolId] = useState<BasicToolId | null>(null),
+    [showTeethGuides, setShowTeethGuides] = useState(true),
     [selectedDsd, setSelectedDsd] = useState<string[]>([]),
     [showAllDsd, setShowAllDsd] = useState(false),
     [aiBusy, setAiBusy] = useState(false),
@@ -334,6 +347,7 @@ export default function App() {
     setSelection(null);
     setProposal(null);
     setAssessmentId(null);
+    setBasicToolId(null);
     requestToken.current++;
     setTool(step === 'Lip outline' ? 'lip' : 'select');
   }, [photo?.id, step]);
@@ -407,20 +421,17 @@ export default function App() {
   };
   const chooseTool = (t: Tool) => {
     setAssessmentId(null);
+    if (t !== 'select') setBasicToolId(null);
     setTool(t);
   };
-  const startDsd = (id: string, redraw = false) => {
+  const startBasicTool = (id: BasicToolId) => {
     if (!photo) return;
-    const def = dsdDefinition(id);
-    if (!def) return;
-    setAssessmentId(id);
-    const existing = dsdMeasurement(photo, id);
-    setSelection(
-      existing && !redraw
-        ? { kind: 'measurement', id: existing.id, point: 0 }
-        : null,
-    );
-    setTool(existing && !redraw ? 'select' : def.kind);
+    if (!getTemplate(photo, id))
+      edit(setTemplate(photo, seedTemplate(photo, id)));
+    setBasicToolId(id);
+    setAssessmentId(null);
+    setSelection(null);
+    setTool('select');
   };
   const addPhoto = async (file: File, recover = false) => {
     if (!workspace) throw new Error('Wait for local storage to load.');
@@ -713,6 +724,12 @@ export default function App() {
       );
       if (requestToken.current === token) {
         setProposal(result);
+        if (result.operation === 'basic-frame')
+          setSelectedDsd(
+            BASIC_TOOLS.filter(
+              (t) => getTemplate(photo, t.id)?.status !== 'confirmed',
+            ).map((t) => t.id),
+          );
         if (result.operation === 'assessment')
           setSelectedDsd(
             assessmentSchema
@@ -738,6 +755,17 @@ export default function App() {
       x: (p.x * photo.width) / 1000,
       y: (p.y * photo.height) / 1000,
     });
+    if (proposal.operation === 'basic-frame') {
+      edit(
+        applyBasicSuggestion(
+          photo,
+          basicFrameSuggestionSchema.parse(proposal.result),
+          selectedDsd,
+        ),
+      );
+      setSelection(null);
+      setTool('select');
+    }
     if (proposal.operation === 'assessment') {
       edit(
         applyDsdSuggestion(
@@ -977,7 +1005,7 @@ export default function App() {
                 {step === 'Photos'
                   ? 'Start with a smile.'
                   : step === 'Measure'
-                    ? 'Every detail, considered.'
+                    ? 'Basic guides for your smile.'
                     : step === 'Lip outline'
                       ? 'Follow the natural opening.'
                       : step === 'Teeth'
@@ -1000,6 +1028,8 @@ export default function App() {
               onTool={chooseTool}
               assessmentId={assessmentId}
               showAllDsd={showAllDsd}
+              basicToolId={basicToolId}
+              showTeethGuides={showTeethGuides}
               onChange={edit}
               selection={selection}
               onSelect={setSelection}
@@ -1209,7 +1239,7 @@ export default function App() {
           )}
           {step === 'Measure' && photo && (
             <>
-              <h2>Assess tooth positioning.</h2>
+              <h2>Six guides. One smile.</h2>
               <p className="muted">
                 Choose a tool above the photo. Every point can be moved and
                 adjusted precisely.
@@ -1247,13 +1277,13 @@ export default function App() {
                 in the same plane as your measurement.
               </div>
               <hr />
-              <DsdPanel
+              <BasicFramePanel
                 photo={photo}
-                assessmentId={assessmentId}
-                onStart={startDsd}
+                activeId={basicToolId}
+                onStart={startBasicTool}
                 showAll={showAllDsd}
                 onShowAll={setShowAllDsd}
-                onAssist={() => guard(() => runAi('assessment'))}
+                onAssist={() => guard(() => runAi('basic-frame'))}
                 aiBusy={aiBusy}
                 imageReady={!!image}
                 onChange={(next) => {
@@ -1265,39 +1295,43 @@ export default function App() {
                   edit(next);
                 }}
               />
-              <hr />
-              <div className="section-label">
-                MEASUREMENTS <span>{photo.measurements.length}</span>
-              </div>
-              {photo.measurements.length === 0 ? (
-                <p className="muted">Your measurements will appear here.</p>
-              ) : (
-                <div className="measurement-list">
-                  {photo.measurements.map((m) => (
-                    <button
-                      key={m.id}
-                      className={
-                        selection?.kind === 'measurement' &&
-                        selection.id === m.id
-                          ? 'selected'
-                          : ''
-                      }
-                      onClick={() => {
-                        setAssessmentId(m.assessmentId ?? null);
-                        setSelection({
-                          kind: 'measurement',
-                          id: m.id,
-                          point: 0,
-                        });
-                        setTool('select');
-                      }}
-                    >
-                      <span>{m.label}</span>
-                      <strong>{measurementValue(m, photo)}</strong>
-                    </button>
-                  ))}
+              <details className="saved-annotations">
+                <summary>
+                  Saved annotations <span>{photo.measurements.length}</span>
+                </summary>
+                <div className="section-label">
+                  MEASUREMENTS <span>{photo.measurements.length}</span>
                 </div>
-              )}
+                {photo.measurements.length === 0 ? (
+                  <p className="muted">Your measurements will appear here.</p>
+                ) : (
+                  <div className="measurement-list">
+                    {photo.measurements.map((m) => (
+                      <button
+                        key={m.id}
+                        className={
+                          selection?.kind === 'measurement' &&
+                          selection.id === m.id
+                            ? 'selected'
+                            : ''
+                        }
+                        onClick={() => {
+                          setAssessmentId(m.assessmentId ?? null);
+                          setSelection({
+                            kind: 'measurement',
+                            id: m.id,
+                            point: 0,
+                          });
+                          setTool('select');
+                        }}
+                      >
+                        <span>{m.label}</span>
+                        <strong>{measurementValue(m, photo)}</strong>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </details>
               {selectedMeasurement && (
                 <>
                   <label className="field">
@@ -1454,6 +1488,14 @@ export default function App() {
           {step === 'Teeth' && photo && design && (
             <>
               <h2>A smile of your own.</h2>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={showTeethGuides}
+                  onChange={(e) => setShowTeethGuides(e.target.checked)}
+                />
+                Show confirmed smile guides
+              </label>
               <p className="muted">
                 Start with the upper arch, then refine each tooth. Rounded
                 cervical contours are included in every form.
@@ -2054,7 +2096,7 @@ export default function App() {
                   guard(() =>
                     runAi(
                       step === 'Measure'
-                        ? 'assessment'
+                        ? 'basic-frame'
                         : step === 'Lip outline'
                           ? 'outline'
                           : step === 'Teeth'
@@ -2071,7 +2113,7 @@ export default function App() {
                     ? 'Request rendered preview'
                     : 'Suggest ' +
                       (step === 'Measure'
-                        ? 'DSD measurements with Gemini'
+                        ? 'six guide placements with Gemini'
                         : step === 'Lip outline'
                           ? 'lip points'
                           : 'tooth alignment')}
@@ -2516,6 +2558,53 @@ export default function App() {
               : 'Check the suggested coordinates before applying them. Measurements will be calculated locally from your calibration.'}
           </p>
           <div className="proposal-preview">
+            {proposal.operation === 'basic-frame' &&
+              photo &&
+              (() => {
+                const result = basicFrameSuggestionSchema.parse(
+                  proposal.result,
+                );
+                return (
+                  <div className="dsd-proposal-list">
+                    <p>
+                      Review six guides over the original photo. Proportion
+                      targets stay under your control. Accepted placements
+                      remain drafts until confirmed.
+                    </p>
+                    {BASIC_TOOLS.map((t) => {
+                      const unavailable = result.unavailable.find(
+                          (u) => u.id === t.id,
+                        ),
+                        confirmed =
+                          getTemplate(photo, t.id)?.status === 'confirmed';
+                      return (
+                        <label className="check-row" key={t.id}>
+                          <input
+                            type="checkbox"
+                            checked={selectedDsd.includes(t.id)}
+                            disabled={confirmed}
+                            onChange={(e) =>
+                              setSelectedDsd(
+                                e.target.checked
+                                  ? [...selectedDsd, t.id]
+                                  : selectedDsd.filter((id) => id !== t.id),
+                              )
+                            }
+                          />
+                          <span>
+                            {t.label}
+                            {confirmed
+                              ? ' · already confirmed'
+                              : unavailable
+                                ? ` · ${unavailable.reason}`
+                                : ' · editable placement'}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
             {proposal.operation === 'assessment' &&
               photo &&
               (() => {
@@ -2593,6 +2682,7 @@ export default function App() {
                 }
                 photo={photo}
                 image={image}
+                selectedBasicIds={selectedDsd}
               />
             )}
           </div>

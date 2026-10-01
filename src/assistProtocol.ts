@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { basicFrameSuggestionSchema } from './basicFrameSchema.ts';
+export { basicFrameSuggestionSchema } from './basicFrameSchema.ts';
 import { dsdIdSchema, dsdUnavailableSchema } from './domain.ts';
 import {
   DSD_MEASUREMENTS,
@@ -137,6 +139,7 @@ export const proposalSchema = z
     operation: z.enum([
       'landmarks',
       'assessment',
+      'basic-frame',
       'outline',
       'alignment',
       'render',
@@ -161,6 +164,8 @@ export function validateProposal(
   if (proposal.operation === 'landmarks') landmarkSchema.parse(proposal.result);
   if (proposal.operation === 'assessment')
     assessmentSchema.parse(proposal.result);
+  if (proposal.operation === 'basic-frame')
+    basicFrameSuggestionSchema.parse(proposal.result);
   if (proposal.operation === 'outline') outlineSchema.parse(proposal.result);
   if (proposal.operation === 'alignment')
     alignmentSchema.parse(proposal.result);

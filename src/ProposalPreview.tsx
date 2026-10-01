@@ -10,14 +10,23 @@ import {
 import { dsdDefinition } from './dsdCatalog';
 import { type Photo } from './domain';
 import { lipPath } from './geometry';
+import { basicFrameSuggestionSchema } from './basicFrameSchema';
+import {
+  applyBasicSuggestion,
+  templatePaths,
+  curvePath,
+  toolLabel,
+} from './basicFrame';
 export function ProposalPreview({
   proposal,
   photo,
   image,
+  selectedBasicIds = [],
 }: {
   proposal: Proposal;
   photo: Photo;
   image: HTMLImageElement | null;
+  selectedBasicIds?: string[];
 }) {
   const id = useId().replace(/:/g, '');
   if (!image) return <p>Restore the original photo to review this proposal.</p>;
@@ -52,6 +61,54 @@ export function ProposalPreview({
     >
       <image href={image.src} width={photo.width} height={photo.height} />
       <g fill="#f5c482" stroke="#f5c482" strokeWidth={2 * scale}>
+        {proposal.operation === 'basic-frame' &&
+          (() => {
+            try {
+              const next = applyBasicSuggestion(
+                photo,
+                basicFrameSuggestionSchema.parse(proposal.result),
+                selectedBasicIds,
+              );
+              return next.dsd?.basicFrame?.templates
+                .filter(
+                  (t) =>
+                    selectedBasicIds.includes(t.id) &&
+                    t.status !== 'unavailable',
+                )
+                .map((t) => (
+                  <g key={t.id}>
+                    {templatePaths(t).map((path) =>
+                      t.id.endsWith('curve') ? (
+                        <path key={path.key} d={curvePath(path)} fill="none" />
+                      ) : (
+                        <polyline
+                          key={path.key}
+                          points={path.anchors
+                            .flatMap((a) =>
+                              a.point ? [`${a.point.x},${a.point.y}`] : [],
+                            )
+                            .join(' ')}
+                          fill="none"
+                        />
+                      ),
+                    )}
+                    {(() => {
+                      const p = templatePaths(t)
+                        .flatMap((path) => path.anchors)
+                        .find((a) => a.point)?.point;
+                      return p ? label(p, toolLabel(t.id), t.id) : null;
+                    })()}
+                  </g>
+                ));
+            } catch {
+              return (
+                <text x={10} y={30} fill="white">
+                  A suggested guide extends outside the photo. Deselect it to
+                  continue.
+                </text>
+              );
+            }
+          })()}
         {proposal.operation === 'assessment' &&
           assessmentSchema.parse(proposal.result).measurements.map((m) => {
             const points = m.points.map(point);

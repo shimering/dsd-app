@@ -1,42 +1,42 @@
-# DSD tooth-position assessment
+# Six-tool DSD smile frame
 
-The **Measure** stage now contains a guided assessment before **Lip outline**. The catalog has 69 named photo measurements: 66 apply to a frontal smile, 53 to a retracted view, and five to a resting view. These are photo measurements and visual references for clinician review.
+The **Measure** stage offers six adjustable guides across the ten upper teeth, from second premolar to second premolar: **15, 14, 13, 12, 11, 21, 22, 23, 24, 25**. The former 66-item smile checklist is replaced by six cards.
 
-## Workflow
+| Tool                       | Coverage                                                                                                                                     |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Midline                    | Facial horizontal, facial midline, and dental midline; confirmed offset and angle                                                            |
+| Smile curve                | Ten upper incisal-edge / visible cusp landmarks plus five inner lower-lip reference points                                                   |
+| Interdental proportion     | Ten-tooth ruler with symmetric targets for lateral/central, canine/lateral, first-premolar/canine, and second-premolar/first-premolar widths |
+| Central incisor proportion | Target width/height outlines for 11 and 21                                                                                                   |
+| Gingival curve             | Ten gingival zeniths                                                                                                                         |
+| Papilla curve              | Nine papilla tips, from 15–14 through 24–25                                                                                                  |
 
-1. Add suitable full-face smile, retracted anterior, and lips-at-rest photographs. Set **Assessment photo view** for each original.
-2. Calibrate each photo using a known, clinician-confirmed dimension in the measurement plane. Until then, distances use pixels. Ratios and angles do not require calibration.
-3. Choose a checklist item and follow its endpoint instructions. Reference lines use two points; smile curves need at least three points and **Finish length**.
-4. Mark cropped or unreliable anatomy **not visible**. Measured, unavailable, and remaining items are counted separately.
-5. Review the calculated assessment. Select a recorded item to move endpoints or edit original-image coordinates. **Redraw this measurement** replaces that item; undo/redo remains available.
-6. Continue to **Lip outline** and tooth design. Smile-reference curves do not replace the clipping outline.
+## Fit and confirm
 
-The canvas shows common references and the selected measurement by default. Select either smile curve to compare both, or enable **Show all DSD overlays**. Geometry, view selection, unavailable reasons, and clinician smile-arc classification persist in local cases, cloud records, and backups. Existing cases remain compatible.
+1. Select a card to add its provisional template. Compatible saved facial references, smile curves, gingival and papilla landmarks seed the corresponding guides; other guides start from the existing provisional ten-tooth layout.
+2. Drag individual reference points to refine the shape. The teal handle below the frame moves the guide, the square handle resizes uniformly, and the round top handle rotates. Numeric center coordinates and resize/rotation buttons provide another way to adjust placement. Mouse and pen editing are supported; enable finger edit mode to drag on touch devices. Two fingers continue to navigate the photo.
+3. Set desired proportion percentages in the two proportion cards. The templates resize symmetrically while preserving configured ratios. Starting widths follow **1 : 0.8 : 0.74 : 0.62 : 0.55** from central incisor to second premolar, and central width/height starts at **82%**. These are adjustable design targets.
+4. Open **Landmarks and hidden anatomy** to adjust exact point coordinates or mark cropped / hidden landmarks unavailable. Their tooth or papilla identities stay in place. Curves break at unavailable points rather than interpolate unseen anatomy. At least one reference line or a curve with three visible landmarks is needed for confirmation.
+5. **Confirm guide** records a guide as set; later geometry or target changes return it to draft. **Reset guide** restores its provisional template. A whole guide can be marked unavailable and restored. Undo/redo and cancelled gestures preserve the existing editor behavior.
 
-## Coverage
+The progress display counts **six guides**, rather than individual endpoints. The selected guide and midline references appear by default; **Show all guides** displays the other saved guides. The two smile curves appear together for comparison. The clinician's smile-arc classification remains within that card.
 
-| Group | Recorded geometry |
-| --- | --- |
-| Facial and dental alignment | Facial horizontal / interpupillary line, facial and dental midlines, central incisal plane, canine/anterior plane |
-| Tooth dimensions and axes | Apparent width, height, and visible crown axis for FDI 13, 12, 11, 21, 22, 23; bilateral central-to-lateral incisal steps |
-| Gingival and interdental relationships | Common gingival reference; six gingival levels and zenith offsets; lateral gingival offsets; five papilla heights, contact lengths, and incisal embrasure dimensions |
-| Smile and lip relationships | Smile and visible dentition widths, interlabial gap, bilateral buccal corridors, central incisor and gingival display, incisal arc and inner lower-lip curve |
-| Resting lip relationships | Bilateral incisor display and upper-lip length from a separate resting photo |
+In **Teeth**, **Show confirmed smile guides** displays confirmed frames over the editable design. Guides do not resize or reposition tooth layers. Comparison views and exported simulations omit frame overlays.
 
-Calculated results include midline discrepancy at the incisal embrasure, dental-midline inclination, incisal/anterior cant, crown width/height ratios and axis inclinations, bilateral dimension/gingival differences, neighboring-tooth apparent-width ratios, incisal-step asymmetry, central incisal height difference, gap/corridor ratios, and corridor asymmetry. Gingival levels must share a reference; lateral incisal steps must share the central incisal plane. Angles show absolute deviations between references.
+## Calibration and saved cases
 
-There are no automatic ideal/abnormal classifications or universal proportion targets. Frontal widths are apparent widths. The canine line is an anterior photo reference. Root position, overjet, full 3D occlusion, and periodontal diagnosis require additional clinical records. Hidden anatomy is marked unavailable. Visible zero offsets can be recorded.
+Midline offset is calculated from confirmed references in the facial frame. Distances use pixels until the photo is calibrated against a known reference; ratios and angles need no scale. Calibration and free distance, polyline, angle, reference-line and ink tools remain under **Annotations**. Photo-view selection is in the secondary **Photo view and calibration notes** controls and does not change the six-card roster.
+
+Templates and desired ratios are stored separately from observed measurements in optional `Photo.dsd.basicFrame` data, using original-photo coordinates. Old cases keep all their named measurements and unavailable reasons. Their measurement lists are available under the collapsed **Saved annotations** section. Local saves, cloud case records and JSON backups retain both old records and the new frame without a database migration.
 
 ## Gemini assistance
 
-**Assist this assessment with Gemini** requests the checklist for the saved photo view through `smile-assist`. The existing signed-in account, patient consent, ownership/revision checks, and cooldown remain required. Gemini proposes normalized endpoints or unavailable reasons. Every applicable identifier must occur once. Unknown/duplicate identifiers, incomplete/wrong-view checklists, invalid geometry, inferred scale, and stale proposals are rejected.
+**Assist six tools with Gemini** uses the new `basic-frame` operation. Gemini proposes placement geometry or unavailable reasons for all six tools, including the ten tooth identities and nine papilla identities. It never selects the user's desired ratios. Missing landmarks retain their key and an unavailable reason.
 
-Review the source-photo overlay and select which measurements to apply. Existing clinician measurements take precedence. Suggestions become editable named measurements. Values are computed locally from geometry and confirmed calibration. Credentials remain in server secrets; manual tools remain available during provider outages.
+Review suggestions over the source photo and select tools before applying. Confirmed user guides are protected; unselected suggestions are skipped. Accepted placements remain drafts until manually confirmed. Unknown or duplicate tools, incomplete landmark identities, target injection, invalid coordinates and stale proposals are rejected. Sign-in, patient consent, ownership/revision checks and the existing request interval still apply. Manual tools remain available during provider failures.
 
-The sync before an AI request remembers the case's cloud revision across refreshes. Existing matching cases reconnect automatically. If **Choose a case version** appears, select **Continue with my local edits** to work in a separate case while preserving the original cloud record, or **Use the cloud version** to open it while retaining the local edits in another case. Then press the Gemini button again.
+Deploy the updated `smile-assist` handler before the frontend so it accepts the optional stored frame and the new operation. The legacy `assessment` operation remains compatible with older clients.
 
-## References and checks
+## Verification
 
-The reference categories follow the facial cross, canine/incisal transfer lines, central-incisor proportions, tooth axes, gingival levels, and interdental relationships in [Coachman and Calamita's DSD workflow, QDT 2012](https://digitalsmiledesign.com/files/Old-Website-Assets/Static/Coachman_Calamita_DSD_Eng_12.pdf). Smile/lip relationships also follow the calibrated photo-analysis landmarks in [the standardized smile-analysis study](https://pmc.ncbi.nlm.nih.gov/articles/PMC8667490/).
-
-The release passes 33 unit/integration and 54 browser tests, production configuration/build checks, and edge type checks. Tests cover geometry, view separation, zero offsets, redraw/undo, persistence, compatibility, proposal validation, server contracts, unavailable anatomy, and Chromium/WebKit workflows. Phone layouts are checked for overflow. Clinical accuracy, physical iPad/Pencil support, and authenticated live-provider quality remain clinician/device acceptance work.
+Automated checks cover second-premolar coverage, symmetric target geometry, transformations, midline calculations, hidden landmarks, undo/cancellation, photo rotation and zoom, local reopening, backups, legacy cases and cloud conflicts. Gemini tests cover complete six-tool responses, normalized coordinates, review/application, protected confirmed guides and preserved user targets. Browser checks include Chromium, WebKit and phone layouts. Physical iPad/Pencil use and authenticated provider quality require device and clinician review.

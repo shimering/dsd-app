@@ -1,3 +1,4 @@
+import { openUtilities } from './frame-fixtures';
 import { test, expect, type Page } from '@playwright/test';
 
 async function upload(page: Page) {
@@ -17,13 +18,11 @@ async function upload(page: Page) {
     );
     return Array.from(new Uint8Array(await blob.arrayBuffer()));
   });
-  await page
-    .locator('input[type=file][multiple]')
-    .setInputFiles({
-      name: 'Fictional fixture.png',
-      mimeType: 'image/png',
-      buffer: Buffer.from(bytes),
-    });
+  await page.locator('input[type=file][multiple]').setInputFiles({
+    name: 'Fictional fixture.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(bytes),
+  });
   await expect(page.getByTestId('canvas-surface')).toBeVisible();
 }
 async function point(page: Page, x: number, y: number) {
@@ -48,6 +47,7 @@ for (const theme of ['light', 'dark'])
         .getByRole('button', { name: 'Switch theme', exact: true })
         .click();
     await page.getByRole('button', { name: '2 Measure', exact: true }).click();
+    await openUtilities(page);
     await page
       .getByRole('button', { name: 'Multi-point length', exact: true })
       .click();

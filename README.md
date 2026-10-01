@@ -1,6 +1,6 @@
 # Smile Studio
 
-A React/TypeScript smile design editor built around **Photos → Measure → Lip outline → Teeth → Compare**. **Measure** includes a guided DSD tooth-position assessment with 69 named photo measurements, calculated alignment/proportion results, and reviewed Gemini assistance. See [docs/DSD_MEASUREMENTS.md](docs/DSD_MEASUREMENTS.md).
+A React/TypeScript smile design editor built around **Photos → Measure → Lip outline → Teeth → Compare**. **Measure** includes six adjustable DSD smile-frame tools covering ten upper teeth through both second premolars, visual proportion targets, and reviewed Gemini assistance. See [docs/DSD_MEASUREMENTS.md](docs/DSD_MEASUREMENTS.md).
 
 ```sh
 npm ci

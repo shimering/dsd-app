@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import type { Workspace } from '../../src/domain';
+import { BASIC_TOOLS } from '../../src/basicFrameSchema';
 
 const owner = '11111111-1111-4111-8111-111111111111';
 const otherOwner = '22222222-2222-4222-8222-222222222222';
@@ -13,6 +14,13 @@ async function cloudFixture(page: Page, cachedVersion?: number) {
     sourceRevision: number;
   }[] = [];
   let hideNextLookup = false;
+  let assistResult: unknown = {
+    templates: [],
+    unavailable: BASIC_TOOLS.map((t) => ({
+      id: t.id,
+      reason: 'Fixture anatomy unavailable.',
+    })),
+  };
   let heldLookup: { started: () => void; gate: Promise<void> } | null = null;
   await page.route(
     /https:\/\/[^/]+\/(auth|rest|functions)\/v1\//,
@@ -50,9 +58,9 @@ async function cloudFixture(page: Page, cachedVersion?: number) {
         });
         return;
       }
-    if (url.pathname === '/functions/v1/smile-assist') {
-      const input = request.postDataJSON();
-      expect(input.model).toBe('gemini-3.5-flash');
+      if (url.pathname === '/functions/v1/smile-assist') {
+        const input = request.postDataJSON();
+        expect(input.model).toBe('gemini-3.5-flash');
         const source = {
           workspaceId: input.workspaceId,
           photoId: input.photoId,
@@ -65,18 +73,7 @@ async function cloudFixture(page: Page, cachedVersion?: number) {
           operation: input.operation,
           model: input.model,
           createdAt: new Date().toISOString(),
-          result: {
-            measurements: [
-              {
-                assessmentId: 'width-11',
-                points: [
-                  { x: 430, y: 430 },
-                  { x: 490, y: 430 },
-                ],
-              },
-            ],
-            unavailable: [],
-          },
+          result: assistResult,
         });
         return;
       }
@@ -201,6 +198,9 @@ async function cloudFixture(page: Page, cachedVersion?: number) {
     rows,
     writes,
     assists,
+    setAssistResult: (result: unknown) => {
+      assistResult = result;
+    },
     hideNextLookup: () => {
       hideNextLookup = true;
     },
@@ -219,20 +219,11 @@ async function cloudFixture(page: Page, cachedVersion?: number) {
 }
 async function editWidth(page: Page) {
   await page.getByRole('button', { name: '2 Measure', exact: true }).click();
+  await page.getByTestId('basic-tool-central-incisor-proportion').click();
+  await page.getByLabel('Central incisor width / height %').fill('78');
   await page
-    .locator('.dsd-checklist summary')
-    .filter({ hasText: 'Tooth dimensions & axes' })
+    .getByRole('button', { name: 'Confirm guide', exact: true })
     .click();
-  await page
-    .getByRole('button', { name: 'Measure 11 crown width', exact: true })
-    .click();
-  const box = (await page.getByTestId('canvas-surface').boundingBox())!;
-  const scale = Math.min((box.width - 32) / 1200, (box.height - 32) / 800);
-  for (const x of [510, 590])
-    await page.mouse.click(
-      box.x + box.width / 2 + (x - 600) * scale,
-      box.y + box.height / 2,
-    );
   await expect(
     page.getByText('Saved on this device', { exact: true }),
   ).toBeVisible();
@@ -241,7 +232,7 @@ async function assist(page: Page) {
   await page.getByRole('button', { name: '2 Measure', exact: true }).click();
   await page
     .getByRole('button', {
-      name: 'Assist this assessment with Gemini',
+      name: 'Assist six tools with Gemini',
       exact: true,
     })
     .click();
@@ -286,9 +277,9 @@ test('cloud revision survives refresh and local edits reach Gemini without re-in
   expect(cloud.writes[1].expected).toBe('eq.1');
   expect(cloud.rows.get(cloud.workspace.id)?.revision).toBe(2);
   expect(
-    cloud.rows.get(cloud.workspace.id)?.body.photos[0].measurements[0]
-      .assessmentId,
-  ).toBe('width-11');
+    cloud.rows.get(cloud.workspace.id)?.body.photos[0].dsd?.basicFrame
+      ?.templates[0].targets,
+  ).toEqual([0.78]);
   expect(cloud.assists).toHaveLength(1);
 });
 
@@ -349,9 +340,9 @@ test('different existing copies can continue with local edits while preserving t
     'Other device edits',
   );
   expect(
-    local.find((c) => c.id === selected)?.photos[0].measurements[0]
-      .assessmentId,
-  ).toBe('width-11');
+    local.find((c) => c.id === selected)?.photos[0].dsd?.basicFrame
+      ?.templates[0].targets,
+  ).toEqual([0.78]);
   await assist(page);
   await expect(proposal(page)).toBeVisible();
   expect(cloud.rows.get(remote.id)).toEqual({ body: remote, revision: 4 });
@@ -381,7 +372,7 @@ test('choosing the cloud version retains the local measurements in a separate ca
     (c) => c.id !== cloud.workspace.id,
   )!;
   expect(copy.name).toContain('(local copy)');
-  expect(copy.photos[0].measurements[0].assessmentId).toBe('width-11');
+  expect(copy.photos[0].dsd?.basicFrame?.templates[0].targets).toEqual([0.78]);
   await assist(page);
   await expect(proposal(page)).toBeVisible();
   expect(cloud.writes[0]).toMatchObject({ method: 'PATCH', expected: 'eq.4' });
@@ -476,4 +467,83 @@ test('cloud records arriving after sign-out cannot enter the guest workspace', a
     false,
   );
   expect(await savedVersion(page, cloud.workspace.id, 'guest')).toBeUndefined();
+});
+
+test('reviewed six-tool placements preserve confirmed guides and user targets', async ({
+  page,
+}) => {
+  const cloud = await cloudFixture(page);
+  await page.getByRole('button', { name: '2 Measure', exact: true }).click();
+  await page.getByTestId('basic-tool-interdental-proportion').click();
+  await page.getByLabel('Lateral / central width %').fill('70');
+  await page.getByTestId('basic-tool-midline').click();
+  await page
+    .getByRole('button', { name: 'Confirm guide', exact: true })
+    .click();
+  const suggestions = await page.evaluate(async () => {
+    const { BASIC_TOOLS } = await import('/src/basicFrameSchema.ts');
+    const { seedTemplate } = await import('/src/basicFrame.ts');
+    const { loadWorkspaces } = await import('/src/storage.ts');
+    const p = (await loadWorkspaces('11111111-1111-4111-8111-111111111111'))[0]
+      .photos[0];
+    const point = (q: { x: number; y: number }) => ({
+      x: (q.x * 1000) / p.width,
+      y: (q.y * 1000) / p.height,
+    });
+    return {
+      templates: BASIC_TOOLS.map(({ id }) => {
+        const t = seedTemplate(p, id);
+        return {
+          id,
+          paths: t.paths.map((path) => ({
+            ...path,
+            anchors: path.anchors.map((a) => ({
+              ...a,
+              point: a.point ? point(a.point) : null,
+            })),
+          })),
+          ...(t.placement
+            ? {
+                placement: {
+                  ...t.placement,
+                  center: point(t.placement.center),
+                  centralWidth: (t.placement.centralWidth * 1000) / p.width,
+                },
+              }
+            : {}),
+        };
+      }),
+      unavailable: [],
+    };
+  });
+  cloud.setAssistResult(suggestions);
+  await assist(page);
+  await expect(proposal(page)).toBeVisible();
+  const options = proposal(page).locator(
+    '.dsd-proposal-list input[type=checkbox]',
+  );
+  await expect(options).toHaveCount(6);
+  await expect(options.first()).toBeDisabled();
+  await options.nth(5).uncheck();
+  await page
+    .getByRole('button', { name: 'Apply reviewed proposal', exact: true })
+    .click();
+  await expect(proposal(page)).toHaveCount(0);
+  await expect(
+    page.getByText('Saved on this device', { exact: true }),
+  ).toBeVisible();
+  const p = (await localCases(page))[0].photos[0];
+  expect(
+    p.dsd!.basicFrame!.templates.find((t) => t.id === 'midline')!.status,
+  ).toBe('confirmed');
+  expect(
+    p.dsd!.basicFrame!.templates.find((t) => t.id === 'interdental-proportion')!
+      .targets![0],
+  ).toBe(0.7);
+  expect(
+    p.dsd!.basicFrame!.templates.find((t) => t.id === 'gingival-curve')!.status,
+  ).toBe('draft');
+  expect(
+    p.dsd!.basicFrame!.templates.some((t) => t.id === 'papilla-curve'),
+  ).toBe(false);
 });

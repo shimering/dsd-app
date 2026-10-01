@@ -2,7 +2,7 @@ import { type Measurement, type Photo, type Point, uid } from './domain.ts';
 import { ANTERIOR, applicableDsd, dsdDefinition } from './dsdCatalog.ts';
 import { distance, pixelsPerMm } from './geometry.ts';
 
-export const dsdState = (photo: Photo) =>
+export const dsdState = (photo: Photo): NonNullable<Photo['dsd']> =>
   photo.dsd ?? {
     view: 'smile' as const,
     unavailable: [],

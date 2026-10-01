@@ -1,5 +1,10 @@
 import { z } from 'zod';
 import { DSD_MEASUREMENTS, dsdDefinition } from './dsdCatalog.ts';
+import {
+  basicFrameSchema,
+  FRAME_TEETH,
+  frameExtentPoints,
+} from './basicFrameSchema.ts';
 
 export const dsdIdSchema = z.enum(
   DSD_MEASUREMENTS.map((m) => m.id) as [string, ...string[]],
@@ -11,7 +16,7 @@ export const dsdUnavailableSchema = z
   })
   .strict();
 
-export const FDI = [15, 14, 13, 12, 11, 21, 22, 23, 24, 25] as const;
+export const FDI = FRAME_TEETH;
 export const FORMS = [
   { id: 'oval', name: 'Soft oval' },
   { id: 'square', name: 'Soft square' },
@@ -154,6 +159,7 @@ export const photoSchema = z
       .object({
         view: z.enum(['smile', 'rest', 'retracted']),
         unavailable: z.array(dsdUnavailableSchema).max(DSD_MEASUREMENTS.length),
+        basicFrame: basicFrameSchema.optional(),
         smileArc: z
           .enum(['unassessed', 'consonant', 'flat', 'reverse'])
           .optional(),
@@ -176,6 +182,17 @@ export const photoSchema = z
   })
   .strict()
   .superRefine((p, c) => {
+    if (
+      p.dsd?.basicFrame?.templates.some((t) =>
+        frameExtentPoints(t).some(
+          (q) => q.x < 0 || q.y < 0 || q.x > p.width || q.y > p.height,
+        ),
+      )
+    )
+      c.addIssue({
+        code: 'custom',
+        message: 'Basic guides must stay inside the original photo.',
+      });
     const ids = p.measurements
       .filter((m) => m.assessmentId)
       .map((m) => m.assessmentId);
@@ -386,8 +403,13 @@ export function assertPhotoGeometry(photo: Photo) {
     ...photo.lip.points,
     ...(photo.calibration?.points ?? []),
     ...photo.measurements.flatMap((m) => m.points),
+    ...(photo.dsd?.basicFrame?.templates.flatMap(frameExtentPoints) ?? []),
   ];
-  if (all.some((p) => p.x > photo.width || p.y > photo.height))
+  if (
+    all.some(
+      (p) => p.x < 0 || p.y < 0 || p.x > photo.width || p.y > photo.height,
+    )
+  )
     throw new Error('A point is outside the original photo.');
   if (
     photo.measurements.some(

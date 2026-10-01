@@ -1,3 +1,4 @@
+import { openUtilities } from './frame-fixtures';
 import { test, expect, type Page } from '@playwright/test';
 async function fixture(page: Page, color = '#ba8371') {
   const bytes = await page.evaluate(async (color) => {
@@ -49,6 +50,7 @@ async function place(page: Page, x: number, y: number) {
 }
 async function addDistance(page: Page, waitForSave = true) {
   await page.getByRole('button', { name: '2 Measure', exact: true }).click();
+  await openUtilities(page);
   await page.getByRole('button', { name: 'Distance', exact: true }).click();
   await place(page, 350, 600);
   await place(page, 700, 600);
@@ -88,19 +90,18 @@ test('multiple photos, source rotation, point movement, cancellation, and undo/r
   await page.mouse.move(p.x, p.y);
   await page.mouse.down();
   await page.mouse.move(p.x + 35, p.y);
-  await page
-    .getByTestId('canvas-surface')
-    .dispatchEvent('pointercancel', {
-      pointerId: 1,
-      pointerType: 'mouse',
-      clientX: p.x + 35,
-      clientY: p.y,
-    });
+  await page.getByTestId('canvas-surface').dispatchEvent('pointercancel', {
+    pointerId: 1,
+    pointerType: 'mouse',
+    clientX: p.x + 35,
+    clientY: p.y,
+  });
   await page.mouse.up();
   await expect(page.getByText('350.0 px', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '1 Photos', exact: true }).click();
   await page.getByRole('button', { name: '+90°', exact: true }).click();
   await page.getByRole('button', { name: '2 Measure', exact: true }).click();
+  await openUtilities(page);
   await expect(page.getByText('350.0 px', { exact: true })).toBeVisible();
 });
 test('offline edits save and backup restores geometry and exact original media', async ({
@@ -127,6 +128,7 @@ test('offline edits save and backup restores geometry and exact original media',
     .setInputFiles(path);
   await expect(page.getByRole('status')).toContainText('Backup imported');
   await page.getByRole('button', { name: '2 Measure', exact: true }).click();
+  await openUtilities(page);
   await expect(page.getByText('350.0 px', { exact: true })).toBeVisible();
   await expect(page.locator('.canvas-message')).toHaveCount(0);
 });
@@ -156,6 +158,7 @@ test('missing media rejects a different original with the same dimensions', asyn
     .setInputFiles(original);
   await expect(page.locator('.canvas-message')).toHaveCount(0);
   await page.getByRole('button', { name: '2 Measure', exact: true }).click();
+  await openUtilities(page);
   await expect(page.getByText('350.0 px', { exact: true })).toBeVisible();
 });
 test('storage failures are visible and current geometry can still be backed up', async ({
@@ -186,6 +189,7 @@ test('synthetic pen and two-finger gestures keep navigation separate from editin
 }) => {
   await start(page);
   await page.getByRole('button', { name: '2 Measure', exact: true }).click();
+  await openUtilities(page);
   await page.getByRole('button', { name: 'Distance', exact: true }).click();
   await page.evaluate(() => {
     const host = document.querySelector(

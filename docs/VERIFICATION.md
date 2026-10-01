@@ -1,3 +1,11 @@
+# Six-tool DSD smile frame — 1 October 2026
+
+Implemented six adjustable tools across upper FDI 15,14,13,12,11,21,22,23,24,25, including ten-tooth smile/gingival curves, nine papilla identities, symmetric proportion targets, and confirmed guides in Teeth. Desired targets remain separate from observed measurements and never change tooth layers. Existing named measurements remain compatible and appear under collapsed saved annotations.
+
+All **53 unit/integration tests** pass. The **76-case full Chromium/WebKit browser suite** passes, plus **two focused canvas-handle checks** in those browsers (78 browser scenarios total). Coverage includes exact second-premolar identities, hidden landmarks, frame transforms and ratio preservation, undo/cancellation, source rotation/zoom, backup restore, old 69-record cases, cloud conflicts, and reviewed AI proposals preserving user targets and confirmed guides. Production configuration, build, edge type checking and whitespace checks pass. Phone screenshots were visually reviewed. The production frontend entry bundle is `index-ClzgcM2S.js`.
+
+The user explicitly approved backend and frontend publishing to the existing destinations. Supabase `smile-assist` in the **Dsd** project `ievxqrnqeahljepcjhfp` was deployed first as version **14**, ACTIVE, with JWT verification enabled. All eight retrieved source/configuration files match the tested source. Production-origin preflight returned 200 with the expected allowed origin; an unauthenticated POST returned 401. The frontend is being published through GitHub `shimering/dsd-app` main and its existing Cloudflare production integration. No patient photograph was sent to Gemini during verification. Authenticated live-provider quality and physical iPad/Pencil checks remain separate acceptance work.
+
 # Rebuild verification — 28 September 2026
 
 ## Gemini 3.5 request compatibility — 29 September 2026
