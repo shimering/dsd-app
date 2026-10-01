@@ -21,6 +21,18 @@ Each completed tooth gesture creates one undo step. Pointer cancellation, lost c
 
 ## Tooth proportions
 
+After placing the ten upper overlays, press **Recalculate from measurements** to fit the whole active design to confirmed Measure guides. The button becomes available when a confirmed tooth-proportion, usable dental-midline, incisal, or gingival guide is present. Changing guides does not automatically edit teeth. This explicit fit preserves form, texture, shade, visibility, perspective, lighting, saved annotations, guide targets, and other design alternatives. Undo/redo restores the operation as a single edit; the resulting geometry persists in cases and backups.
+
+Fitting uses the following priorities:
+
+- The confirmed ten-tooth ruler supplies symmetric crown widths and arch positions, including both second premolars. The central-incisor target sets the width/height ratio for 11 and 21. Without a ruler, the confirmed central outlines supply the positions and sizes of those two teeth only.
+- The confirmed dental line aligns the arch center and rotation. Facial references continue to show the facial comparison. A dental line with no downward component cannot define crown alignment.
+- Visible incisal and gingival curves constrain crown edges. With a proportion layout or dental line, the fitter intersects the visible curve with each crown axis. Without those constraints, paired landmarks give that tooth's observed axis and crown height. A single edge keeps the existing height. Resizing from the ruler preserves an existing crown ratio unless a confirmed central target or paired edge curves provide its height.
+- A confirmed central proportion takes priority over the gingival height when it differs from the incisal-to-gingival gap; the incisal edge remains aligned, and the cervical edge may differ from the gingival guide. Review and refine the guides or the tooth after applying.
+- Null landmarks never supply a constraint or get interpolated across a missing section. A tooth with no applicable constraint retains its geometry. Papilla and inner lower-lip curves remain visual references rather than being interpreted as crown borders. Conflicting reversed edges or unrepresentable crown sizes leave the affected tooth unchanged and are reported after the fit.
+
+Calibration and photo rotation/zoom do not change this fit: all geometry uses original-photo coordinates and the configured dimensionless ratios.
+
 The earlier placement stretched crowns to 90% of the lip opening height. A deep opening therefore produced excessively long teeth. Starting crown heights now come from their widths with tooth-specific visual ratios, and the upper arch is positioned near the upper lip rather than stretched across the complete oral opening. Opening height controls clipping and the available space.
 
 **Restore natural proportions** repairs the selected tooth, or all teeth when whole-smile mode is enabled or no tooth is selected. It preserves crown width, rotation, and the cervical midpoint while restoring height. Each repair is undoable; the clinician can still adjust width/height independently. Two-finger scaling preserves the restored ratios. Existing designs are repaired explicitly rather than rewritten on load.

@@ -1,3 +1,9 @@
+# Tooth overlay recalculation — 1 October 2026
+
+Added **Recalculate from measurements** in Teeth after the ten overlays are placed. It explicitly fits the active design to confirmed ruler widths, central-incisor proportions, dental midline, and visible incisal/gingival curves. Tooth styles, visibility, perspective, lighting, guide targets, and other alternatives remain intact. Draft/unavailable guides are ignored; conflicting crown constraints retain the affected tooth and are reported. The operation is one undo/redo step and persists through reload. See [TEETH_CONTROLS.md](TEETH_CONTROLS.md) for fitting priorities.
+
+All **62 unit/integration tests** pass. The full browser run passed 70 scenarios and found twelve layout checks still using the pre-six-tool heading; after correcting that selector, all twelve passed in Chromium/WebKit. The four recalculation browser checks were also rerun against the final fitter, so all **82 browser scenarios** have passed. Coverage includes custom ratios, second premolars, partial curves, rotated guides, asymmetric central contact alignment, preservation of styles/lighting and alternatives, single-edit undo/redo, persistence, and phone layouts. Production build, edge type checking, public production configuration, and whitespace checks pass. The narrow-screen recalculation screenshot was visually reviewed. The tested entry bundle is `index-CWiCj7Yb.js`. This frontend-only addition leaves the deployed assistance handler and stored data schemas unchanged.
+
 # Six-tool DSD smile frame — 1 October 2026
 
 Implemented six adjustable tools across upper FDI 15,14,13,12,11,21,22,23,24,25, including ten-tooth smile/gingival curves, nine papilla identities, symmetric proportion targets, and confirmed guides in Teeth. Desired targets remain separate from observed measurements and never change tooth layers. Existing named measurements remain compatible and appear under collapsed saved annotations.

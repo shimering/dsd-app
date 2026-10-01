@@ -21,7 +21,7 @@ The **Measure** stage offers six adjustable guides across the ten upper teeth, f
 
 The progress display counts **six guides**, rather than individual endpoints. The selected guide and midline references appear by default; **Show all guides** displays the other saved guides. The two smile curves appear together for comparison. The clinician's smile-arc classification remains within that card.
 
-In **Teeth**, **Show confirmed smile guides** displays confirmed frames over the editable design. Guides do not resize or reposition tooth layers. Comparison views and exported simulations omit frame overlays.
+In **Teeth**, **Show confirmed smile guides** displays confirmed frames over the editable design. Editing guides leaves tooth layers unchanged. After placing the ten overlays, **Recalculate from measurements** explicitly fits the active tooth design to confirmed proportions, dental midline, and visible incisal/gingival levels. Draft and unavailable guides are ignored. The operation preserves tooth styling and lighting and can be undone in one step. Papilla and lower-lip curves remain comparison references. See [TEETH_CONTROLS.md](TEETH_CONTROLS.md) for fitting priorities. Comparison views and exported simulations omit frame overlays.
 
 ## Calibration and saved cases
 

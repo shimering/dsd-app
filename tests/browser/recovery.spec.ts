@@ -259,7 +259,7 @@ for (const size of [
         .click();
       await expect(
         page.getByRole('heading', {
-          name: 'Every detail, considered.',
+          name: 'Six guides. One smile.',
           exact: true,
         }),
       ).toBeVisible();

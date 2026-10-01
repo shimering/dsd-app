@@ -45,6 +45,119 @@ async function screenPoint(page: Page, x: number, y: number) {
     y: r.y + r.height / 2 + (y - 400) * s,
   };
 }
+
+test('Teeth recalculation applies confirmed custom targets as one undoable persistent edit', async ({
+  page,
+}) => {
+  await start(page);
+  await page.getByRole('button', { name: '4 Teeth', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Place ten upper teeth', exact: true })
+    .click();
+  const recalculate = page.getByRole('button', {
+    name: 'Recalculate from measurements',
+    exact: true,
+  });
+  await expect(recalculate).toBeDisabled();
+  await page.getByRole('button', { name: '2 Measure', exact: true }).click();
+  await page.getByTestId('basic-tool-interdental-proportion').click();
+  await page.getByLabel('Lateral / central width %').fill('70');
+  await page.getByRole('button', { name: '4 Teeth', exact: true }).click();
+  await expect(recalculate).toBeDisabled();
+  await page.getByRole('button', { name: '2 Measure', exact: true }).click();
+  await page.getByTestId('basic-tool-interdental-proportion').click();
+  await page
+    .getByRole('button', { name: 'Confirm guide', exact: true })
+    .click();
+  await page.getByTestId('basic-tool-central-incisor-proportion').click();
+  await page.getByLabel('Central incisor width / height %').fill('76');
+  await page
+    .getByRole('button', { name: 'Confirm guide', exact: true })
+    .click();
+  await page.getByRole('button', { name: '4 Teeth', exact: true }).click();
+  await page.getByRole('button', { name: '11', exact: true }).click();
+  await page.getByLabel('Form', { exact: true }).selectOption('square');
+  await page.getByLabel('Texture', { exact: true }).selectOption('detailed');
+  await page.getByRole('button', { name: 'B1', exact: true }).click();
+  await page.getByLabel('Height px', { exact: true }).fill('300');
+  const before = await savedPhoto(page);
+  await recalculate.click();
+  const after = await savedPhoto(page),
+    teeth = after.designs[0].teeth;
+  const tooth = (fdi: number) => teeth.find((t) => t.fdi === fdi)!;
+  expect(teeth.map((t) => t.fdi)).toEqual([
+    15, 14, 13, 12, 11, 21, 22, 23, 24, 25,
+  ]);
+  expect(tooth(12).width / tooth(11).width).toBeCloseTo(0.7);
+  expect(tooth(11).width / tooth(11).height).toBeCloseTo(0.76);
+  expect(tooth(21).width / tooth(21).height).toBeCloseTo(0.76);
+  expect(tooth(11)).toMatchObject({
+    form: 'square',
+    texture: 'detailed',
+    shade: 'B1',
+  });
+  expect(after.designs[0].lighting).toEqual(before.designs[0].lighting);
+  expect(after.dsd).toEqual(before.dsd);
+  expect(after.revision).toBe(before.revision + 1);
+  await page.getByRole('button', { name: 'Undo', exact: true }).click();
+  await expect
+    .poll(async () => (await savedPhoto(page)).designs)
+    .toEqual(before.designs);
+  await page.getByRole('button', { name: 'Redo', exact: true }).click();
+  await expect
+    .poll(async () => (await savedPhoto(page)).designs)
+    .toEqual(after.designs);
+  await page.reload();
+  await page.getByRole('button', { name: '4 Teeth', exact: true }).click();
+  expect((await savedPhoto(page)).designs).toEqual(after.designs);
+});
+
+test('narrow-screen recalculation fits visible endpoints and preserves a cropped second premolar', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await start(page);
+  for (const id of ['smile-curve', 'gingival-curve']) {
+    const path = id === 'smile-curve' ? 'incisal' : 'gingival';
+    await page.getByTestId(`basic-tool-${id}`).click();
+    const details = page.locator('.basic-landmarks');
+    if (!(await details.evaluate((e: HTMLDetailsElement) => e.open)))
+      await details.locator('summary').click();
+    await page.getByLabel(`${path} 25 visible`, { exact: true }).uncheck();
+    await page
+      .getByLabel(`${path} 11 Y`, { exact: true })
+      .fill(id === 'smile-curve' ? '500' : '380');
+    await page
+      .getByRole('button', { name: 'Confirm guide', exact: true })
+      .click();
+  }
+  await page.getByRole('button', { name: '4 Teeth', exact: true }).click();
+  await page
+    .getByRole('button', { name: 'Place ten upper teeth', exact: true })
+    .click();
+  const before = await savedPhoto(page);
+  const recalculate = page.getByRole('button', {
+    name: 'Recalculate from measurements',
+    exact: true,
+  });
+  await recalculate.click();
+  const after = await savedPhoto(page);
+  expect(after.designs[0].teeth.find((t) => t.fdi === 11)!.height).toBe(120);
+  expect(after.designs[0].teeth.find((t) => t.fdi === 25)).toEqual(
+    before.designs[0].teeth.find((t) => t.fdi === 25),
+  );
+  await recalculate.scrollIntoViewIfNeeded();
+  await expect(recalculate).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: test.info().outputPath('recalculate-teeth-phone.png'),
+    fullPage: true,
+  });
+});
 test('exactly six templates cover both second premolars and retain hidden landmark identities', async ({
   page,
 }) => {

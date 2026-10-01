@@ -68,6 +68,7 @@ import {
 } from './storage';
 import { exportImage, drawMockup } from './render';
 import { matchPhotoLighting } from './lighting';
+import { recalculateTeeth, recalculationTools } from './recalculateTeeth';
 import {
   supabase,
   fetchCloud,
@@ -235,6 +236,7 @@ export default function App() {
       ? design?.teeth.find((t) => t.fdi === selection.fdi)
       : undefined;
   const lighting = design?.lighting ?? DEFAULT_LIGHTING;
+  const fittingTools = photo ? recalculationTools(photo) : [];
   const selectedMeasurement =
     selection?.kind === 'measurement'
       ? photo?.measurements.find((m) => m.id === selection.id)
@@ -1524,6 +1526,33 @@ export default function App() {
                 </button>
               ) : (
                 <>
+                  <button
+                    className="primary full"
+                    disabled={!fittingTools.length}
+                    onClick={() => {
+                      const result = recalculateTeeth(photo);
+                      edit({
+                        ...replaceDesign(photo, {
+                          ...design,
+                          teeth: result.teeth,
+                        }),
+                        render: null,
+                      });
+                      setNotice(
+                        result.skipped.length
+                          ? `Recalculated teeth. Kept teeth ${result.skipped.join(', ')} unchanged because their guides conflict. Undo is available.`
+                          : 'Teeth recalculated from confirmed measurements. Undo is available.',
+                      );
+                    }}
+                  >
+                    <RotateCw size={17} />
+                    Recalculate from measurements
+                  </button>
+                  <p className="muted">
+                    {fittingTools.length
+                      ? 'Fit the whole active smile to confirmed proportions, dental midline, smile and gingival curves. Tooth styles and lighting are preserved.'
+                      : 'Confirm tooth proportions, a dental midline, smile or gingival curve in Measure to enable recalculation.'}
+                  </p>
                   <div className="fdi-grid">
                     {FDI.map((fdi) => (
                       <button
